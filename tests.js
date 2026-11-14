@@ -319,6 +319,46 @@ test('(새 계획) 학기용: 평일·주말 분량을 따로 정해서 만들�
   eq(unitsShown(np, D1, D1, sid), [1, 2, 3], '12/20(일)은 3강');
 });
 
+/* ===== 요일별 과목 · 간격 복습 (요일이 맞는 2025년 12월 날짜 사용: 12/1 월요일) ===== */
+var MON = '2025-12-01', TUE = '2025-12-02', WED = '2025-12-03', THU = '2025-12-04', FRI = '2025-12-05', SAT = '2025-12-06', SUN = '2025-12-07', MON2 = '2025-12-08';
+function wk(str) { return [0, 1, 2, 3, 4, 5, 6].map(function (i) { return str.indexOf('일월화수목금토'[i]) >= 0; }); }
+
+test('[새 1] 월요일 국어를 못 하면 수요일 국어에 그 진도가 나오고, 화요일에는 국어가 안 나옴', function () {
+  var p = makePlan([subj('kor', 40, 2, ['강의 듣기', '복습'], { weekdays: wk('월수목토') })], MON, '2026-02-28');
+  eq(unitsShown(p, MON, MON, 'kor'), [1, 2], '월');
+  L.autoClose(p, TUE);                               // 월요일 못 함
+  eq(L.dayOf(p, TUE, TUE).shown.kor, [], '화요일에는 국어 없음');
+  L.autoClose(p, WED);
+  eq(unitsShown(p, WED, WED, 'kor'), [1, 2], '수요일에 월요일 진도');
+  checkAll(p, WED, WED); L.closeDay(p, WED, WED);
+  eq(unitsShown(p, THU, THU, 'kor'), [3, 4], '목요일은 다음 진도');
+});
+
+test('[새 2] 일요일 당겨오기 후 그 과목의 다음 차례 진도가 맞게 이어짐', function () {
+  var p = makePlan([subj('kor', 40, 2, [], { weekdays: wk('월수목토') }), subj('his', 30, 2, [], { weekdays: wk('일') })], MON, '2026-02-28');
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);    // 월: 1·2강
+  L.autoClose(p, SAT);                               // 수·목·금 못 함 → 3·4강 밀림
+  checkAll(p, SAT, SAT); L.closeDay(p, SAT, SAT);    // 토: 3·4강
+  var sun = L.dayOf(p, SUN, SUN);
+  eq(sun.shown.kor, [], '일요일엔 원래 국어 없음');
+  L.setCheck(p, SAT, L.itemId('kor', 3, 0), false);  // (토요일 4강을 사실 못 했다고 고침 → 밀린 과목)
+  eq(L.dayOf(p, SUN, SUN).behind.kor, 1, '일요일 밀린 과목: 국어 1개');
+  eq(L.nextDoDay(p, p.subjects[0], SUN), { date: MON2, n: 2 }, '다음 차례는 월요일 2강');
+  L.pull(p, SUN, 'kor');
+  eq(unitsShown(p, SUN, SUN, 'kor'), [4, 5], '당겨오기: 다음 차례(4·5강)가 오늘로');
+  checkAll(p, SUN, SUN); L.closeDay(p, SUN, SUN);
+  eq(unitsShown(p, MON2, MON2, 'kor'), [6, 7], '월요일은 원래 다음 진도(6·7강)부터');
+  eq(unitsShown(p, MON2, SUN, 'his'), [1, 2], '한국사는 그대로');
+});
+
+test('[새 1-1] 당겨오기 취소', function () {
+  var p = makePlan([subj('kor', 40, 2, [], { weekdays: wk('월') })], MON, '2026-02-28');
+  L.pull(p, TUE, 'kor');
+  eq(unitsShown(p, TUE, TUE, 'kor'), [1, 2]);
+  L.unpull(p, TUE, 'kor');
+  eq(L.dayOf(p, TUE, TUE).shown.kor, []);
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);

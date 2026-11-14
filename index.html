@@ -322,9 +322,12 @@ var StudyLogic = (function () {
   function isPaused(plan, date) {
     return (plan.pauses || []).some(function (q) { return date >= q.from && (!q.to || date <= q.to); });
   }
+  // 하는 요일: weekdays = [일,월,화,수,목,금,토] true/false (없으면 매일)
+  function doesDay(s, date) { return !s.weekdays || !!s.weekdays[weekday(date)]; }
   function quotaFor(plan, s, date, ignoreEnd) {
     if (date < plan.start || (date > plan.end && !ignoreEnd)) return 0;
     if (isRestDay(plan, date) || isPaused(plan, date)) return 0;
+    if (!doesDay(s, date)) return 0;
     var per = periodFor(s, date, ignoreEnd && date > plan.end);
     var n = per ? per.days[weekday(date)] : s.daily;
     return Math.max(0, n | 0);
@@ -386,11 +389,15 @@ var StudyLogic = (function () {
       var rec = plan.days[d];
       var frozen = !!(rec && rec.closed && rec.shown);
       var shown = {};
+      // 밀린 과목: 전에 화면에 나왔는데 아직 못 한 새 진도가 있는 과목 (과목별 개수)
+      var behind = {};
+      seen.forEach(function (id) { if (!done.has(id)) { var sid0 = id.split('|')[0]; behind[sid0] = (behind[sid0] || 0) + 1; } });
+      var pulls = (rec && rec.pulls) || {};
       subs.forEach(function (x) {
         var sid = x.s.id;
         shown[sid] = frozen
           ? (rec.shown[sid] || []).filter(function (id) { return known.has(id); })
-          : pickItems(x.units, done, quotaFor(plan, x.s, d, opts.extend), x.s.mode);
+          : pickItems(x.units, done, quotaFor(plan, x.s, d, opts.extend) + (pulls[sid] || 0), x.s.mode);
       });
 
       if (!frozen && ((opts.autoClose && d < today) || opts.closeDate === d)) {
@@ -422,7 +429,7 @@ var StudyLogic = (function () {
       else status = missed.length ? 'missed' : 'done';
 
       if (!opts.extend || d <= plan.end) {
-        days.push({ date: d, shown: shown, items: all, missed: missed, carried: carried, status: status, rest: rest, paused: paused, closed: closed });
+        days.push({ date: d, shown: shown, items: all, missed: missed, carried: carried, status: status, rest: rest, paused: paused, closed: closed, behind: behind, pulls: pulls });
       }
 
       all.forEach(function (id) { seen.add(id); });
@@ -558,6 +565,25 @@ var StudyLogic = (function () {
     var rec = plan.days[date];
     if (rec) { delete rec.closed; delete rec.shown; }
   }
+  // 그 과목의 다음 하는 날 (date 다음 날부터 찾음) → { date, n:분량 }
+  function nextDoDay(plan, s, date) {
+    for (var i = 1; i <= 60; i++) {
+      var d = addDays(date, i), n = quotaFor(plan, s, d, true);
+      if (n > 0) return { date: d, n: n };
+    }
+    return { date: null, n: Math.max(1, s.daily | 0) };
+  }
+  // 당겨오기: 다음 하는 날 1회분을 오늘 할 일에 더함
+  function pull(plan, date, sid) {
+    var s = plan.subjects.filter(function (x) { return x.id === sid; })[0];
+    var rec = plan.days[date] = plan.days[date] || { checked: {}, memo: '' };
+    rec.pulls = rec.pulls || {};
+    rec.pulls[sid] = (rec.pulls[sid] || 0) + nextDoDay(plan, s, date).n;
+  }
+  function unpull(plan, date, sid) {
+    var rec = plan.days[date];
+    if (rec && rec.pulls) delete rec.pulls[sid];
+  }
   function setCheck(plan, date, id, val) {
     var rec = plan.days[date] = plan.days[date] || { checked: {}, memo: '' };
     rec.checked = rec.checked || {};
@@ -582,7 +608,7 @@ var StudyLogic = (function () {
 
   return {
     pad: pad, parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, weekday: weekday, diffDays: diffDays,
-    itemId: itemId, unitsOf: unitsOf, parseCSV: parseCSV, itemsFor: itemsFor, rowsFromCSV: rowsFromCSV, quotaFor: quotaFor, periodFor: periodFor, isRestDay: isRestDay, isPaused: isPaused, switchPlan: switchPlan, pickItems: pickItems,
+    itemId: itemId, unitsOf: unitsOf, parseCSV: parseCSV, itemsFor: itemsFor, rowsFromCSV: rowsFromCSV, quotaFor: quotaFor, periodFor: periodFor, isRestDay: isRestDay, isPaused: isPaused, switchPlan: switchPlan, doesDay: doesDay, nextDoDay: nextDoDay, pull: pull, unpull: unpull, pickItems: pickItems,
     simulate: simulate, autoClose: autoClose, closeDay: closeDay, reopenDay: reopenDay, setCheck: setCheck,
     dayOf: dayOf, progress: progress, forecast: forecast, stats: stats, newPlanFrom: newPlanFrom
   };
@@ -628,7 +654,22 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         { id: uid(), type: 'numbered', name: '영단어', book: '수능 영단어', unitName: 'Day', total: 40, daily: 1, tasks: [] }
       ]
     };
-    return { version: 1, activePlanId: p.id, plans: [p] };
+    applyWeeklySetup(p);
+    return { version: 1, activePlanId: p.id, plans: [p], setupA: true };
+  }
+  // 요일별 과목 기본 설정 (A단계): 이름으로 과목을 찾아 하는 요일을 넣고, 없는 과목은 새로 추가
+  function WK(str) { return [0, 1, 2, 3, 4, 5, 6].map(function (i) { return str.indexOf('일월화수목금토'[i]) >= 0; }); }
+  function applyWeeklySetup(p) {
+    var find = function (re, not) { return p.subjects.filter(function (s) { return re.test(s.name) && !(not && not.test(s.name)); })[0]; };
+    var set = function (s, days) { if (s) s.weekdays = WK(days); };
+    set(find(/수학/), '일월화수목금토');
+    set(find(/국어/), '월수목토');
+    set(find(/영어/, /단어/), '화수금토');
+    set(find(/영단어|단어/), '일월화수목금토');
+    [['통합사회', '월목', 1], ['통합과학', '화금', 1], ['한국사', '일', 2]].forEach(function (a) {
+      if (find(new RegExp(a[0]))) return set(find(new RegExp(a[0])), a[1]);
+      p.subjects.push({ id: uid(), type: 'numbered', name: a[0], book: '(커리큘럼 나오면 수정)', unitName: '강', total: 30, daily: a[2], tasks: ['강의 듣기', '복습'], weekdays: WK(a[1]) });
+    });
   }
 
   var MATH_FILE = 'math_curriculum.csv';
@@ -680,6 +721,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       data.addedMath = true; save();
     }
     upgradeData();
+    if (!data.setupA) { applyWeeklySetup(plan()); data.setupA = true; save(); }
     ensureRows();
   }
   // 예전 버전 데이터 맞추기: '보관된 계획' → '일시정지된 계획'
@@ -755,9 +797,33 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     // 이 날짜 이전까지 완료된 것 (지난 날 화면에서 "원래 이미 했던 것" 표시용)
     var doneBefore = d > p.start ? L.simulate(p, t, L.addDays(d, -1)).done : new Set();
 
+    // 일요일: 밀린 과목 → 당겨오기
+    var canEdit = !day.closed && day.status !== 'future';
+    if (L.weekday(d) === 0 && canEdit) {
+      var lag = sim.subs.filter(function (x) { return day.behind[x.s.id] && !(day.shown[x.s.id] || []).length; });
+      if (lag.length) {
+        h += '<div class="sec" style="border-color:var(--orange)"><h2>🗓 밀린 과목</h2><p class="hint" style="margin-top:0">「당겨오기」를 누르면 그 과목의 다음 차례 진도를 오늘 할 수 있어요. 끝내면 다음 차례에는 그다음 진도가 나와요.</p>';
+        lag.forEach(function (x) {
+          var nx = L.nextDoDay(p, x.s, d);
+          h += '<div class="subrow"><div class="nm"><b>' + esc(x.s.name) + '</b><small>밀린 항목 ' + day.behind[x.s.id] + '개' +
+            (nx.date ? ' · 원래 다음 차례: ' + korDate(nx.date) : '') + '</small></div>' +
+            '<button class="btn pri" data-act="pull" data-id="' + x.s.id + '">⤴ 당겨오기</button></div>';
+        });
+        h += '</div>';
+      }
+    }
+
+    var offList = [];
     h += '<div class="cards">';
     sim.subs.forEach(function (x) {
       var s = x.s, ids = day.shown[s.id] || [];
+      var pulled = day.pulls && day.pulls[s.id];
+      // 오늘 안 하는 과목은 카드 대신 아래 한 줄로
+      if (!ids.length && !pulled && (!L.doesDay(s, d) || day.rest) && !(s.type === 'table' && !(s.rows && s.rows.length))) {
+        var nx0 = L.nextDoDay(p, s, d);
+        offList.push(esc(s.name) + (nx0.date ? ' <span class="hint">(다음 ' + korDate(nx0.date).replace(/^\d+월 /, '') + ')</span>' : ''));
+        return;
+      }
       var pr = L.progress(x.units, doneNow);
       var unitLabel = s.type === 'table' ? '일차' : s.unitName;
       if (s.type === 'table' && !(s.rows && s.rows.length)) {
@@ -768,8 +834,9 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
             : '<div class="empty">진도표를 불러오는 중이에요…</div>') + '</div>';
         return;
       }
-      h += '<div class="card"><div class="card-h"><h2>' + esc(s.name) + '</h2><span class="book">' + esc(s.book || '') + '</span></div>';
-      h += '<div class="card-meta">하루 ' + L.quotaFor(p, s, d) + esc(unitLabel) + ' · 지금까지 ' + pr.doneUnits + '/' + pr.totalUnits + esc(unitLabel) + ' 완료</div>';
+      h += '<div class="card"><div class="card-h"><h2>' + esc(s.name) + '</h2><span class="book">' + esc(s.book || '') + '</span>' +
+        (pulled ? '<span class="tag">⤴ 당겨옴</span>' + (canEdit ? '<button class="btn" style="margin-left:auto;min-height:44px" data-act="unpull" data-id="' + s.id + '">당겨오기 취소</button>' : '') : '') + '</div>';
+      h += '<div class="card-meta">' + (L.doesDay(s, d) ? '하는 날 · ' : '오늘은 원래 안 하는 날 · ') + (pulled ? '당겨온 ' + pulled + esc(unitLabel) + (L.quotaFor(p, s, d) ? ' + 원래 ' + L.quotaFor(p, s, d) + esc(unitLabel) : '') : '하루 ' + L.quotaFor(p, s, d) + esc(unitLabel)) + ' · 지금까지 ' + pr.doneUnits + '/' + pr.totalUnits + esc(unitLabel) + ' 완료</div>';
       h += '<div class="bar"><i style="width:' + (pr.totalUnits ? Math.round(pr.doneUnits / pr.totalUnits * 100) : 0) + '%"></i></div>';
       if (!ids.length) {
         h += '<div class="empty">' + (day.rest ? '쉬는 날이에요 💤' : (pr.doneUnits === pr.totalUnits && pr.totalUnits ? '🎉 모두 끝냈어요!' : '이 날은 할 일이 없어요')) + '</div>';
@@ -804,6 +871,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       h += '</div>';
     });
     h += '</div>';
+    if (offList.length) h += '<p class="hint" style="margin-top:14px">😌 오늘 안 하는 과목: ' + offList.join(', ') + '</p>';
 
     // 백업 알림
     var closedN = Object.keys(p.days).filter(function (k) { return p.days[k].closed; }).length;
@@ -1024,6 +1092,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         ? '진도표 ' + (s.rows || []).length + '일차 · 하루 ' + s.daily + '일차 · ' + (s.mode === 'B' ? '남은 항목+다음 일차' : '남은 항목이 1자리')
         : '총 ' + s.total + s.unitName + ' · 하루 ' + s.daily + s.unitName + (s.tasks && s.tasks.length ? ' · [' + s.tasks.join('] [') + ']' : '');
       if (s.periods && s.periods.length) info += ' · 기간 규칙 ' + s.periods.length + '개';
+      info = wdText(s) + ' · ' + info;
       h += '<div class="subrow"><div class="nm"><b>' + esc(s.name) + '</b><small>' + esc([s.book, info].filter(Boolean).join(' · ')) + '</small></div>' +
         '<button class="btn" data-act="editsub" data-id="' + s.id + '">수정</button>' +
         '<button class="btn red" data-act="delsub" data-id="' + s.id + '">삭제</button></div>';
@@ -1070,6 +1139,12 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     return h;
   }
 
+  function wdText(s) {
+    if (!s.weekdays || s.weekdays.every(Boolean)) return '매일';
+    var out = []; for (var k = 1; k <= 7; k++) if (s.weekdays[k % 7]) out.push(WD[k % 7]);
+    return out.length ? out.join('·') : '요일 없음';
+  }
+
   /* ---------- 과목 편집 모달 ---------- */
   var draft = null;
   function openSubjectModal(s) {
@@ -1083,7 +1158,8 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       '<label class="field"><span>교재/강좌 이름</span><input id="sBook" value="' + esc(s.book) + '" placeholder="예: ○○ 개념 강좌"></label></div>' +
       '<div class="grid2"><label class="field"><span>단위 이름</span><input id="sUnit" value="' + esc(s.unitName) + '" placeholder="강, Day, 회 …"></label>' +
       '<label class="field"><span>총 단위 수</span><input id="sTotal" type="number" inputmode="numeric" min="1" value="' + s.total + '"></label></div>' +
-      '<label class="field"><span>기본 하루 분량</span><input id="sDaily" type="number" inputmode="numeric" min="0" value="' + s.daily + '"></label>' +
+      weekdaysEditor(s) +
+      '<label class="field"><span>하는 날 하루 분량</span><input id="sDaily" type="number" inputmode="numeric" min="0" value="' + s.daily + '"></label>' +
       periodsEditor(s, s.unitName || '') +
       '<div class="field"><span>세부 할 일 (없으면 단위 하나가 체크 1개)</span><div class="tasklist">';
     s.tasks.forEach(function (t, i) {
@@ -1202,6 +1278,12 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     });
     return h + '<button class="btn" data-act="addper">＋ 기간 추가</button></div>';
   }
+  function weekdaysEditor(s) {
+    var wd = s.weekdays || [true, true, true, true, true, true, true];
+    var h = '<div class="field"><span>하는 요일</span><div class="wkbtns">';
+    for (var k = 0; k < 7; k++) h += '<button class="wkb ' + (wd[k] ? 'on' : '') + '" data-act="subwd" data-w="' + k + '">' + WD[k] + '</button>';
+    return h + '</div><p class="hint" style="margin:6px 0 0">안 하는 요일에는 새 진도가 나오지 않아요. 못 한 진도는 다음 하는 날로 밀려요.</p></div>';
+  }
   function readPeriods() {
     (draft.periods || []).forEach(function (per, i) {
       var f = document.querySelector('[data-pf="' + i + '"]'), t = document.querySelector('[data-pt="' + i + '"]');
@@ -1239,7 +1321,8 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     var h = '<div class="modal"><div class="sec"><h2>' + (s._new ? '진도표 과목 추가' : '진도표 과목 수정') + '</h2>' +
       '<div class="grid2"><label class="field"><span>과목 이름</span><input id="tName" value="' + esc(s.name) + '"></label>' +
       '<label class="field"><span>교재/설명</span><input id="tBook" value="' + esc(s.book || '') + '"></label></div>' +
-      '<label class="field"><span>기본 하루 분량 (일차 수)</span><input id="tDaily" type="number" inputmode="numeric" min="0" value="' + s.daily + '"></label>' +
+      weekdaysEditor(s) +
+      '<label class="field"><span>하는 날 하루 분량 (일차 수)</span><input id="tDaily" type="number" inputmode="numeric" min="0" value="' + s.daily + '"></label>' +
       periodsEditor(s, '일차') +
       '<div class="field"><span>못 한 항목이 있을 때 다음 날은…</span>' +
       '<button class="radio ' + (s.mode !== 'B' ? 'on' : '') + '" data-act="mode" data-mode="A"><span class="dot"></span><span><b>남은 항목이 1일차 자리를 차지 (기본)</b><br><span class="hint">예: 하루 1일차, 1일차 일부를 못 함 → 다음 날은 1일차 남은 항목만</span></span></button>' +
@@ -1299,6 +1382,15 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         L.closeDay(p, d, t); save(); toast('마감했어요!');
         if (sundayOn() && L.weekday(d) === 0 && lastBackup() !== t) { ui.modal = backupModal; window.scrollTo(0, 0); }
         break;
+      case 'pull': L.pull(p, d, b.getAttribute('data-id')); save(); toast('다음 차례 진도를 오늘로 당겨왔어요'); break;
+      case 'unpull': L.unpull(p, d, b.getAttribute('data-id')); save(); toast('당겨오기를 취소했어요'); break;
+      case 'subwd': {
+        readAnyDraft();
+        var wi = +b.getAttribute('data-w');
+        draft.weekdays = draft.weekdays || [true, true, true, true, true, true, true];
+        draft.weekdays[wi] = !draft.weekdays[wi];
+        render(); return;
+      }
       case 'exportclose': exportJSON(); ui.modal = null; break;
       case 'sundaytoggle': localStorage.setItem(SKEY, sundayOn() ? '0' : '1'); toast(sundayOn() ? '일요일 백업 알림을 켰어요' : '일요일 백업 알림을 껐어요'); break;
       case 'reopen': L.reopenDay(p, d); ui.editDate = null; save(); toast('마감을 취소했어요'); break;
