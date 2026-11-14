@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2563eb">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="공부계획">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>공부 계획 체크</title>
 <style>
 :root{
@@ -1335,6 +1341,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   function renderSettings() {
     var p = plan();
     var h = '';
+    h += '<div class="sec"><h2>📲 앱으로 설치</h2>' + installHTML() + '</div>';
     h += '<div class="sec"><h2>📆 지금 계획 「' + esc(p.name) + '」 기간</h2>' +
       '<label class="field"><span>계획 이름</span><input id="pName" value="' + esc(p.name) + '"></label>' +
       '<div class="grid2"><label class="field"><span>시작일</span><input type="date" id="pStart" value="' + p.start + '"></label>' +
@@ -1925,6 +1932,34 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     if (ui.modal === dayModal) ui.modal = null;
     if (ui.tab === 'calendar') render();
   });
+
+  /* ---------- PWA: 홈 화면 설치 + 오프라인 ---------- */
+  var installEvt = null;
+  function standalone() { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+  function installHTML() {
+    if (standalone()) return '<p class="hint" style="margin:0">✅ 지금 앱으로 실행 중이에요. 인터넷이 없어도 열려요.</p>';
+    var h = '<p class="hint" style="margin-top:0">홈 화면에 아이콘을 추가하면 앱처럼 바로 열 수 있고, <b>인터넷이 없어도</b> 작동해요. 체크 기록은 지금처럼 이 기기에 저장돼요.</p>';
+    if (installEvt) return h + '<button class="btn pri" data-act="install">📲 홈 화면에 설치하기</button>';
+    return h + '<p class="hint" style="margin:0">설치 버튼이 안 보이면: 크롬 오른쪽 위 <b>⋮ 메뉴 → 「홈 화면에 추가」 또는 「앱 설치」</b>를 눌러 주세요.' +
+      (location.protocol === 'file:' ? ' (파일로 직접 연 상태에서는 설치할 수 없어요. GitHub Pages 주소로 열어 주세요.)' : '') + '</p>';
+  }
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault(); installEvt = e;
+    if (ui.tab === 'settings' && !ui.modal) render();
+  });
+  window.addEventListener('appinstalled', function () { installEvt = null; toast('홈 화면에 설치했어요!'); if (ui.tab === 'settings') render(); });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act="install"]'); if (!b || !installEvt) return;
+    installEvt.prompt();
+    installEvt.userChoice.then(function () { installEvt = null; if (ui.tab === 'settings') render(); });
+  });
+  window.addEventListener('offline', function () { toast('📴 오프라인이에요. 기록은 그대로 저장돼요.'); });
+  window.addEventListener('online', function () { toast('🌐 다시 인터넷에 연결됐어요'); });
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () { /* 설치 실패해도 앱은 그대로 동작 */ });
+    });
+  }
 
   load(); runAutoClose(); render();
 })();
