@@ -11,6 +11,14 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>공부 계획 체크</title>
+<script>
+  // 화면 디자인: 'samsung'(기본) 또는 'classic'. 기기에만 저장되고, 기록 데이터와는 상관없어요.
+  (function () {
+    var t = 'samsung';
+    try { t = localStorage.getItem('studyplan.theme') || 'samsung'; } catch (e) {}
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 <style>
 :root{
   --bg:#f3f5f9; --card:#ffffff; --text:#1c2333; --sub:#5b6478; --line:#e2e6ee;
@@ -219,6 +227,78 @@ button{cursor:pointer;touch-action:manipulation}
 .tabs button.on{color:var(--accent)}
 
 .toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:#222a38;color:#fff;padding:14px 22px;border-radius:14px;font-weight:600;z-index:60;max-width:90vw;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+
+/* ===================================================================
+   🎨 삼성 스타일 (DESIGN 문서 기준) — html[data-theme="samsung"] 일 때만 적용
+   흰 캔버스 + #f7f7f7 면, 검정 글씨, 검정 알약 버튼(20px), 그림자 없음, 2px 점선 포커스.
+   상태 색(초록 ✅ / 빨강 ❌ / 주황 테스트 모드)은 앱 기능에 필요해서 그대로 둠.
+   =================================================================== */
+html[data-theme="samsung"]{
+  --bg:#ffffff; --card:#f7f7f7; --text:#000000; --sub:#707070; --line:#dddddd;
+  --accent:#000000; --accent-soft:#efefef; --gray-soft:#ececec; --shadow:none; --navblue:#006bea; --chip:#ffffff;
+}
+@media (prefers-color-scheme: dark){
+  html[data-theme="samsung"]{
+    --bg:#000000; --card:#161616; --text:#ffffff; --sub:#a3a3a3; --line:#333333;
+    --accent:#ffffff; --accent-soft:#242424; --gray-soft:#262626; --navblue:#5b9dff; --chip:#0b0b0b;
+  }
+}
+html[data-theme="samsung"] body{font-family:"SamsungOneKorean","SamsungOne","Samsung Sans",system-ui,-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif;letter-spacing:-0.2px}
+html[data-theme="samsung"] :focus-visible{outline:2px dotted var(--text);outline-offset:1px}
+html[data-theme="samsung"] h1,html[data-theme="samsung"] h2,html[data-theme="samsung"] h3{font-weight:700;letter-spacing:-0.4px}
+/* 면: 그림자·테두리 없이 흰 바탕 위 #f7f7f7, 20px 모서리 */
+html[data-theme="samsung"] .card,html[data-theme="samsung"] .sec,html[data-theme="samsung"] .tile,html[data-theme="samsung"] .result{border:0;border-radius:20px;box-shadow:none}
+html[data-theme="samsung"] .result.ok{box-shadow:inset 0 0 0 2px var(--green)}
+html[data-theme="samsung"] .result.bad{box-shadow:inset 0 0 0 2px var(--red)}
+html[data-theme="samsung"] .modal .sec{background:var(--bg)}
+html[data-theme="samsung"] .zone{font-size:24px}
+/* 버튼: 검정 알약(채움) / 테두리 알약(누르면 반전) */
+html[data-theme="samsung"] .bigbtn{border-radius:999px;background:var(--accent);color:var(--bg);border:1px solid var(--accent);box-shadow:none;font-weight:700;font-size:19px}
+html[data-theme="samsung"] .bigbtn.ghost,html[data-theme="samsung"] .btn,html[data-theme="samsung"] .todaybtn,html[data-theme="samsung"] .howbtn{background:transparent;color:var(--text);border:1px solid var(--text);border-radius:999px;font-weight:700}
+html[data-theme="samsung"] .bigbtn.ghost:active,html[data-theme="samsung"] .btn:active,html[data-theme="samsung"] .todaybtn:active,html[data-theme="samsung"] .howbtn:active{background:var(--text);color:var(--bg)}
+html[data-theme="samsung"] .btn.pri{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+html[data-theme="samsung"] .btn.red{color:var(--red);border-color:var(--red)}
+html[data-theme="samsung"] .btn.red:active{background:var(--red);color:#fff}
+html[data-theme="samsung"] .bigbtn.danger{background:var(--red);border-color:var(--red);color:#fff}
+html[data-theme="samsung"] .navbtn{background:var(--card);border:0;box-shadow:none}
+html[data-theme="samsung"] .navbtn:active{background:var(--text);color:var(--bg)}
+/* 체크 항목 */
+html[data-theme="samsung"] .chk{background:var(--chip);border:1px solid var(--line);border-radius:16px}
+html[data-theme="samsung"] .chk .box{border-radius:50%;border-width:2px;border-color:#9a9a9a}
+html[data-theme="samsung"] .chk.on{border-color:var(--green);background:var(--green-soft)}
+html[data-theme="samsung"] .chk.overdue{border-color:var(--red);background:var(--red-soft)}
+html[data-theme="samsung"] .chk.miss{border-color:var(--red)}
+html[data-theme="samsung"] .bar{height:6px;background:var(--line)}
+html[data-theme="samsung"] .bar>i{background:var(--text)}
+/* 칩·배지·선택 */
+html[data-theme="samsung"] .badge,html[data-theme="samsung"] .kind,html[data-theme="samsung"] .mins{border-radius:999px}
+html[data-theme="samsung"] .b-open{background:var(--text);color:var(--bg)}
+html[data-theme="samsung"] .notice{background:var(--card);color:var(--text);border-radius:16px}
+html[data-theme="samsung"] .notice.warn{background:var(--orange-soft);color:var(--orange)}
+html[data-theme="samsung"] .wkb{border:1px solid var(--text);border-radius:999px;background:transparent}
+html[data-theme="samsung"] .wkb.on{background:var(--text);border-color:var(--text);color:var(--bg)}
+html[data-theme="samsung"] .radio{background:var(--chip);border:1px solid var(--line);border-radius:20px}
+html[data-theme="samsung"] .radio.on{border:2px solid var(--text);background:var(--chip)}
+html[data-theme="samsung"] .radio.on .dot{border-color:var(--text)}
+html[data-theme="samsung"] .toggle.on{background:var(--text)}
+html[data-theme="samsung"] .planbar button{border:1px solid var(--text);color:var(--text);background:transparent}
+html[data-theme="samsung"] .planbar button.on{background:var(--text);color:var(--bg);border-color:var(--text)}
+html[data-theme="samsung"] .field input,html[data-theme="samsung"] .field select,html[data-theme="samsung"] .result textarea,html[data-theme="samsung"] .minrow input,html[data-theme="samsung"] .npq input,html[data-theme="samsung"] .wk input{background:var(--chip);border:1px solid var(--line);border-radius:12px}
+html[data-theme="samsung"] .chip{background:var(--chip);color:var(--text);border:1px solid var(--line)}
+html[data-theme="samsung"] .howbox{background:var(--chip);border:1px solid var(--line)}
+/* 달력 */
+html[data-theme="samsung"] .cell{box-shadow:none;border-radius:14px;background:var(--card)}
+html[data-theme="samsung"] .cell.today{border-color:var(--text)}
+html[data-theme="samsung"] .cell.sel{border-color:var(--navblue)}
+html[data-theme="samsung"] .cell.s-open{background:var(--accent-soft)}
+/* 아래 탭: 검정 글씨 + 위쪽 2px 막대, 누르는 동안 내비게이션 파랑(#006bea) */
+html[data-theme="samsung"] .tabs{background:var(--bg);border-top:1px solid var(--line)}
+html[data-theme="samsung"] .tabs button{position:relative;color:var(--sub)}
+html[data-theme="samsung"] .tabs button.on{color:var(--text)}
+html[data-theme="samsung"] .tabs button.on::before{content:"";position:absolute;top:0;left:22%;right:22%;height:2px;background:var(--text)}
+html[data-theme="samsung"] .tabs button:active{color:var(--navblue)}
+html[data-theme="samsung"] .tabs button:active::before{background:var(--navblue)}
+html[data-theme="samsung"] .toast{background:var(--text);color:var(--bg);border-radius:999px}
 </style>
 </head>
 <body>
@@ -1342,6 +1422,11 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     var p = plan();
     var h = '';
     h += '<div class="sec"><h2>📲 앱으로 설치</h2>' + installHTML() + '</div>';
+    var th = document.documentElement.getAttribute('data-theme');
+    h += '<div class="sec"><h2>🎨 화면 디자인</h2>' +
+      '<button class="radio ' + (th === 'samsung' ? 'on' : '') + '" data-act="theme" data-v="samsung"><span class="dot"></span><span><b>삼성 스타일</b><br><span class="hint">흰 바탕, 검정 글씨, 검정 알약 모양 버튼</span></span></button>' +
+      '<button class="radio ' + (th !== 'samsung' ? 'on' : '') + '" data-act="theme" data-v="classic"><span class="dot"></span><span><b>기본</b><br><span class="hint">처음 디자인 (파란색 포인트, 둥근 카드)</span></span></button>' +
+      '<p class="hint" style="margin:0">디자인만 바뀌고 기록과 기능은 그대로예요. 언제든 다시 바꿀 수 있어요.</p></div>';
     h += '<div class="sec"><h2>📆 지금 계획 「' + esc(p.name) + '」 기간</h2>' +
       '<label class="field"><span>계획 이름</span><input id="pName" value="' + esc(p.name) + '"></label>' +
       '<div class="grid2"><label class="field"><span>시작일</span><input type="date" id="pStart" value="' + p.start + '"></label>' +
@@ -1726,6 +1811,13 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         save(); toast('복습 시간을 저장했어요'); break;
       }
       case 'resetrevmin': delete p.revMin; save(); toast('기본값으로 되돌렸어요'); break;
+      case 'theme': {
+        var tv = b.getAttribute('data-v');
+        document.documentElement.setAttribute('data-theme', tv);
+        try { localStorage.setItem('studyplan.theme', tv); } catch (e2) {}
+        setThemeColor();
+        toast(tv === 'samsung' ? '삼성 스타일로 바꿨어요' : '기본 디자인으로 바꿨어요'); break;
+      }
       case 'pull': L.pull(p, d, b.getAttribute('data-id')); save(); toast('다음 차례 진도를 오늘로 당겨왔어요'); break;
       case 'unpull': L.unpull(p, d, b.getAttribute('data-id')); save(); toast('당겨오기를 취소했어요'); break;
       case 'subwd': {
@@ -1960,6 +2052,13 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       navigator.serviceWorker.register('sw.js').catch(function () { /* 설치 실패해도 앱은 그대로 동작 */ });
     });
   }
+
+  function setThemeColor() {
+    var m = document.querySelector('meta[name="theme-color"]');
+    var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (m) m.setAttribute('content', document.documentElement.getAttribute('data-theme') === 'samsung' ? (dark ? '#000000' : '#ffffff') : '#2563eb');
+  }
+  setThemeColor();
 
   load(); runAutoClose(); render();
 })();
