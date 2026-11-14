@@ -620,9 +620,10 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
 
     h += '<div class="sec"><h2>📚 과목</h2>';
     p.subjects.forEach(function (s) {
-      var info = s.type === 'table' ? (s.rows || []).length + '일차 · 하루 ' + s.daily + '일차'
+      var info = s.type === 'table'
+        ? '진도표 ' + (s.rows || []).length + '일차 · 하루 ' + s.daily + '일차 · ' + (s.mode === 'B' ? '남은 항목+다음 일차' : '남은 항목이 1자리')
         : '총 ' + s.total + s.unitName + ' · 하루 ' + s.daily + s.unitName + (s.tasks && s.tasks.length ? ' · [' + s.tasks.join('] [') + ']' : '');
-      h += '<div class="subrow"><div class="nm"><b>' + esc(s.name) + '</b><small>' + esc(s.book || '') + ' · ' + esc(info) + '</small></div>' +
+      h += '<div class="subrow"><div class="nm"><b>' + esc(s.name) + '</b><small>' + esc([s.book, info].filter(Boolean).join(' · ')) + '</small></div>' +
         '<button class="btn" data-act="editsub" data-id="' + s.id + '">수정</button>' +
         '<button class="btn red" data-act="delsub" data-id="' + s.id + '">삭제</button></div>';
     });
