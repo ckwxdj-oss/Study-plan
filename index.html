@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>공부 계획 체크</title>
 <script>
-  // 화면 디자인: 'samsung'(기본) 또는 'classic'. 기기에만 저장되고, 기록 데이터와는 상관없어요.
+  // 화면 디자인: 'samsung'(기본), 'apple', 'classic'. 기기에만 저장되고, 기록 데이터와는 상관없어요.
   (function () {
     var t = 'samsung';
     try { t = localStorage.getItem('studyplan.theme') || 'samsung'; } catch (e) {}
@@ -299,6 +299,81 @@ html[data-theme="samsung"] .tabs button.on::before{content:"";position:absolute;
 html[data-theme="samsung"] .tabs button:active{color:var(--navblue)}
 html[data-theme="samsung"] .tabs button:active::before{background:var(--navblue)}
 html[data-theme="samsung"] .toast{background:var(--text);color:var(--bg);border-radius:999px}
+
+/* ===================================================================
+   🍎 애플 스타일 (DESIGN 문서 기준) — html[data-theme="apple"] 일 때만 적용
+   #f5f5f7 캔버스 + 흰 카드(18px), #1d1d1f 글씨, 파란 알약 버튼(#0071e3, 980px),
+   테두리 버튼은 #0066cc, 그림자 없음, 포커스는 2px #0071e3 링.
+   상태 색(초록 ✅ / 빨강 ❌ / 주황 테스트 모드)은 앱 기능에 필요해서 그대로 둠.
+   =================================================================== */
+html[data-theme="apple"]{
+  --bg:#f5f5f7; --card:#ffffff; --text:#1d1d1f; --sub:#6e6e73; --line:#d2d2d7;
+  --accent:#0071e3; --accent-soft:#e8f1fc; --gray-soft:#ececf0; --shadow:none;
+  --link:#0066cc; --press:#006edb; --hover:#0076df; --chip:#ffffff; --sec2:#515154;
+}
+@media (prefers-color-scheme: dark){
+  html[data-theme="apple"]{
+    --bg:#000000; --card:#1c1c1e; --text:#f5f5f7; --sub:#a1a1a6; --line:#38383a;
+    --accent:#0071e3; --accent-soft:#0d2a4a; --gray-soft:#2c2c2e; --link:#2997ff; --chip:#2c2c2e; --sec2:#c7c7cc;
+  }
+}
+html[data-theme="apple"] body{font-family:"SF Pro Text",-apple-system,BlinkMacSystemFont,system-ui,"Noto Sans KR","Malgun Gothic",sans-serif;font-size:17px;letter-spacing:-0.374px}
+html[data-theme="apple"] h1,html[data-theme="apple"] h2,html[data-theme="apple"] .zone{font-family:"SF Pro Display",-apple-system,BlinkMacSystemFont,system-ui,"Noto Sans KR",sans-serif;font-weight:600;letter-spacing:-0.28px}
+html[data-theme="apple"] .datehead h1{font-size:30px}
+html[data-theme="apple"] .zone{font-size:26px}
+html[data-theme="apple"] :focus-visible{outline:none;box-shadow:0 0 0 2px var(--accent)}
+html[data-theme="apple"] .hint,html[data-theme="apple"] .card-meta{letter-spacing:-0.224px}
+/* 면: 흰 카드, 18px, 그림자 없음 */
+html[data-theme="apple"] .card,html[data-theme="apple"] .sec,html[data-theme="apple"] .tile,html[data-theme="apple"] .result{border:0;border-radius:18px;box-shadow:none}
+html[data-theme="apple"] .result.ok{box-shadow:inset 0 0 0 2px var(--green)}
+html[data-theme="apple"] .result.bad{box-shadow:inset 0 0 0 2px var(--red)}
+html[data-theme="apple"] .modal .sec{background:var(--card)}
+/* 버튼: 파란 알약(채움) / 링크색 테두리 알약 */
+html[data-theme="apple"] .bigbtn{border-radius:980px;background:var(--accent);color:#fff;border:0;box-shadow:none;font-weight:400;font-size:19px;letter-spacing:-0.374px}
+html[data-theme="apple"] .bigbtn:active,html[data-theme="apple"] .btn.pri:active{background:var(--press)}
+html[data-theme="apple"] .bigbtn.ghost,html[data-theme="apple"] .btn,html[data-theme="apple"] .todaybtn,html[data-theme="apple"] .howbtn{background:transparent;color:var(--link);border:1px solid var(--link);border-radius:980px;font-weight:400}
+html[data-theme="apple"] .bigbtn.ghost:active,html[data-theme="apple"] .btn:active,html[data-theme="apple"] .todaybtn:active,html[data-theme="apple"] .howbtn:active{background:var(--accent-soft)}
+html[data-theme="apple"] .btn.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+html[data-theme="apple"] .btn.red{color:var(--red);border-color:var(--red)}
+html[data-theme="apple"] .bigbtn.danger{background:var(--red);color:#fff}
+html[data-theme="apple"] .navbtn{background:var(--card);border:0;box-shadow:none;color:var(--link)}
+/* 체크 항목: 흰 칸 + 동그란 체크 (iOS 느낌) */
+html[data-theme="apple"] .chk{background:var(--chip);border:1px solid var(--line);border-radius:12px;font-weight:500}
+html[data-theme="apple"] .card .chk{background:var(--bg)}
+html[data-theme="apple"] .chk .box{border-radius:50%;border-width:2px;border-color:#aeaeb2}
+html[data-theme="apple"] .chk.on{border-color:var(--green);background:var(--green-soft)}
+html[data-theme="apple"] .chk.overdue{border-color:var(--red);background:var(--red-soft)}
+html[data-theme="apple"] .chk.miss{border-color:var(--red)}
+html[data-theme="apple"] .bar{height:6px;background:var(--gray-soft)}
+html[data-theme="apple"] .bar>i{background:var(--accent)}
+/* 칩·배지·선택 */
+html[data-theme="apple"] .badge,html[data-theme="apple"] .kind,html[data-theme="apple"] .mins{border-radius:980px;font-weight:500}
+html[data-theme="apple"] .b-open{background:var(--accent);color:#fff}
+html[data-theme="apple"] .notice{background:var(--accent-soft);color:var(--text);border-radius:12px}
+html[data-theme="apple"] .notice.warn{background:var(--orange-soft);color:var(--orange)}
+html[data-theme="apple"] .wkb{border:1px solid var(--line);border-radius:8px;background:var(--chip);font-weight:500}
+html[data-theme="apple"] .wkb.on{background:var(--accent);border-color:var(--accent);color:#fff}
+html[data-theme="apple"] .radio{background:var(--chip);border:1px solid var(--line);border-radius:12px}
+html[data-theme="apple"] .card .radio,html[data-theme="apple"] .sec .radio{background:var(--bg)}
+html[data-theme="apple"] .radio.on{border:2px solid var(--accent)}
+html[data-theme="apple"] .radio.on .dot{border-color:var(--accent)}
+html[data-theme="apple"] .toggle{background:var(--gray-soft)}
+html[data-theme="apple"] .toggle.on{background:#34c759}
+html[data-theme="apple"] .planbar button{border:1px solid var(--line);color:var(--text);background:var(--card);border-radius:980px;font-weight:500}
+html[data-theme="apple"] .planbar button.on{background:var(--text);color:var(--bg);border-color:var(--text)}
+html[data-theme="apple"] .field input,html[data-theme="apple"] .field select,html[data-theme="apple"] .result textarea,html[data-theme="apple"] .minrow input,html[data-theme="apple"] .npq input,html[data-theme="apple"] .wk input{background:var(--bg);border:1px solid var(--line);border-radius:8px}
+html[data-theme="apple"] .chip{background:var(--bg);color:var(--text);border:1px solid var(--line)}
+html[data-theme="apple"] .howbox{background:var(--bg)}
+/* 달력 */
+html[data-theme="apple"] .cell{box-shadow:none;border-radius:12px;background:var(--card)}
+html[data-theme="apple"] .cell.today{border-color:var(--accent)}
+html[data-theme="apple"] .cell.sel{border-color:var(--text)}
+/* 아래 탭: 반투명 막(기능 층) + 선택은 파랑 */
+html[data-theme="apple"] .tabs{background:rgba(245,245,247,.82);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:1px solid var(--line)}
+@media (prefers-color-scheme: dark){ html[data-theme="apple"] .tabs{background:rgba(22,22,23,.82)} }
+html[data-theme="apple"] .tabs button{color:var(--sub);font-weight:500}
+html[data-theme="apple"] .tabs button.on{color:var(--accent)}
+html[data-theme="apple"] .toast{background:rgba(29,29,31,.92);color:#fff;border-radius:14px}
 </style>
 </head>
 <body>
@@ -1424,8 +1499,11 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     h += '<div class="sec"><h2>📲 앱으로 설치</h2>' + installHTML() + '</div>';
     var th = document.documentElement.getAttribute('data-theme');
     h += '<div class="sec"><h2>🎨 화면 디자인</h2>' +
-      '<button class="radio ' + (th === 'samsung' ? 'on' : '') + '" data-act="theme" data-v="samsung"><span class="dot"></span><span><b>삼성 스타일</b><br><span class="hint">흰 바탕, 검정 글씨, 검정 알약 모양 버튼</span></span></button>' +
-      '<button class="radio ' + (th !== 'samsung' ? 'on' : '') + '" data-act="theme" data-v="classic"><span class="dot"></span><span><b>기본</b><br><span class="hint">처음 디자인 (파란색 포인트, 둥근 카드)</span></span></button>' +
+      [['samsung', '삼성 스타일', '흰 바탕, 검정 글씨, 검정 알약 모양 버튼'],
+       ['apple', '애플 스타일', '연회색 바탕에 흰 카드, 파란 알약 버튼, 반투명 아래 탭'],
+       ['classic', '기본', '처음 디자인 (파란색 포인트, 둥근 카드)']].map(function (o) {
+        return '<button class="radio ' + (th === o[0] ? 'on' : '') + '" data-act="theme" data-v="' + o[0] + '"><span class="dot"></span><span><b>' + o[1] + '</b><br><span class="hint">' + o[2] + '</span></span></button>';
+      }).join('') +
       '<p class="hint" style="margin:0">디자인만 바뀌고 기록과 기능은 그대로예요. 언제든 다시 바꿀 수 있어요.</p></div>';
     h += '<div class="sec"><h2>📆 지금 계획 「' + esc(p.name) + '」 기간</h2>' +
       '<label class="field"><span>계획 이름</span><input id="pName" value="' + esc(p.name) + '"></label>' +
@@ -1816,7 +1894,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         document.documentElement.setAttribute('data-theme', tv);
         try { localStorage.setItem('studyplan.theme', tv); } catch (e2) {}
         setThemeColor();
-        toast(tv === 'samsung' ? '삼성 스타일로 바꿨어요' : '기본 디자인으로 바꿨어요'); break;
+        toast({ samsung: '삼성 스타일로 바꿨어요', apple: '애플 스타일로 바꿨어요' }[tv] || '기본 디자인으로 바꿨어요'); break;
       }
       case 'pull': L.pull(p, d, b.getAttribute('data-id')); save(); toast('다음 차례 진도를 오늘로 당겨왔어요'); break;
       case 'unpull': L.unpull(p, d, b.getAttribute('data-id')); save(); toast('당겨오기를 취소했어요'); break;
@@ -2056,7 +2134,8 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   function setThemeColor() {
     var m = document.querySelector('meta[name="theme-color"]');
     var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (m) m.setAttribute('content', document.documentElement.getAttribute('data-theme') === 'samsung' ? (dark ? '#000000' : '#ffffff') : '#2563eb');
+    var th = document.documentElement.getAttribute('data-theme');
+    if (m) m.setAttribute('content', th === 'samsung' ? (dark ? '#000000' : '#ffffff') : th === 'apple' ? (dark ? '#000000' : '#f5f5f7') : '#2563eb');
   }
   setThemeColor();
 
