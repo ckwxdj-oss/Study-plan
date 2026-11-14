@@ -808,7 +808,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     // 백업 알림
     var closedN = Object.keys(p.days).filter(function (k) { return p.days[k].closed; }).length;
     var since = daysSinceBackup();
-    var backupTip = d === t && closedN >= 7 && (since == null || since >= 14)
+    var backupTip = d === t && closedN >= 7 && (since == null || since >= 8)
       ? '<div class="notice warn" style="margin-top:20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="flex:1;min-width:200px">💾 ' +
         (since == null ? '아직 백업한 적이 없어요.' : '마지막 백업이 ' + since + '일 전이에요.') + ' 기록이 사라지지 않게 백업해 두세요.</span>' +
         '<button class="btn" data-act="gobackup">백업하러 가기</button></div>' : '';
@@ -1057,11 +1057,13 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     h += '<div class="sec"><h2>💾 백업</h2>' +
       '<p class="hint" style="margin-top:0">기록은 GitHub가 아니라 <b>이 탭의 크롬 안</b>에만 저장돼요. 크롬 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 파일로 내보내 두세요. 카톡 「나에게 보내기」나 구글 드라이브에 올려 두면 더 안전해요.' +
       (testMode ? ' <b>지금은 테스트 모드 데이터가 대상이에요.</b>' : '') + '</p>' +
-      '<div class="' + (since == null || since >= 14 ? 'notice warn' : 'notice') + '">' +
+      '<div class="' + (since == null || since >= 8 ? 'notice warn' : 'notice') + '">' +
       (since == null ? '아직 백업한 적이 없어요.' : '마지막 백업: ' + korDate(lastBackup()) + (since ? ' (' + since + '일 전)' : ' (오늘)')) + '</div>' +
       '<div class="btnrow" style="justify-content:flex-start"><button class="btn pri" data-act="export">⬇️ JSON 파일로 내보내기</button>' +
       '<label class="btn" style="display:inline-flex;align-items:center">⬆️ 백업 파일 불러오기<input type="file" accept=".json,application/json" data-act="importfile" hidden></label></div>' +
-      '<p class="hint">불러오면 지금 데이터가 모두 그 파일 내용으로 바뀌어요 (덮어쓰기).</p></div>';
+      '<p class="hint">불러오면 지금 데이터가 모두 그 파일 내용으로 바뀌어요 (덮어쓰기).</p>' +
+      '<div class="switch" style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px"><div><b>일요일 마감 때 백업 알림</b><br><span class="hint">일요일에 「오늘 마감」을 누르면 백업할지 물어봐요. 그날 이미 백업했으면 안 물어봐요.</span></div>' +
+      '<button class="toggle ' + (sundayOn() ? 'on' : '') + '" data-act="sundaytoggle" aria-label="일요일 백업 알림"></button></div></div>';
 
     h += '<div class="sec"><h2>⚠️ 초기화</h2><p class="hint">' + (testMode ? '테스트 모드' : '실제') + ' 데이터를 모두 지우고 예시 과목으로 다시 시작해요.</p>' +
       '<button class="btn red" data-act="resetall">모든 데이터 지우기</button></div>';
@@ -1147,7 +1149,19 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   /* ---------- 백업 (JSON 파일로 내보내기 / 불러오기) ---------- */
   var BKEY = 'studyplan.lastbackup';
   function lastBackup() { return localStorage.getItem(BKEY + (testMode ? '.test' : '')); }
-  function daysSinceBackup() { var b = lastBackup(); return b ? L.diffDays(b, realToday()) : null; }
+  function daysSinceBackup() { var b = lastBackup(); return b ? Math.max(0, L.diffDays(b, today())) : null; }
+  // 일요일 마감 때 백업 알림 (켜고 끌 수 있음, 기본은 켜짐)
+  var SKEY = 'studyplan.sundaybackup';
+  function sundayOn() { return localStorage.getItem(SKEY) !== '0'; }
+  function backupModal() {
+    return '<div class="modal"><div class="sec">' +
+      '<h2>📅 일요일이에요! 이번 주 백업할까요?</h2>' +
+      '<p>이번 주 마감까지 끝났어요. 지금 백업 파일을 내보내 두면, 크롬 데이터가 지워져도 이번 주까지의 기록을 되살릴 수 있어요.</p>' +
+      '<div class="notice">' + (lastBackup() ? '마지막 백업: ' + korDate(lastBackup()) + ' (' + daysSinceBackup() + '일 전)' : '아직 백업한 적이 없어요.') + '</div>' +
+      '<p class="hint">내보낸 파일은 다운로드 폴더에 생겨요. 카톡 「나와의 채팅」이나 구글 드라이브에 올려 두면 더 안전해요.</p>' +
+      '<div class="btnrow"><button class="bigbtn ghost" data-act="cancelsub">다음에 할게요</button>' +
+      '<button class="bigbtn" data-act="exportclose">⬇️ 지금 백업하기</button></div></div></div>';
+  }
   function exportJSON() {
     var payload = { app: 'study-plan-check', version: 1, exportedAt: new Date().toISOString(), testMode: testMode, data: data };
     var blob = new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' });
@@ -1156,7 +1170,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     a.download = 'study-plan-backup_' + realToday() + (testMode ? '_test' : '') + '.json';
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-    localStorage.setItem(BKEY + (testMode ? '.test' : ''), realToday());
+    localStorage.setItem(BKEY + (testMode ? '.test' : ''), today());
     toast('백업 파일을 내보냈어요 (다운로드 폴더)');
   }
   function importJSON(text) {
@@ -1281,7 +1295,12 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         L.setCheck(p, d, id, !(rec.checked && rec.checked[id]));
         save(); break;
       }
-      case 'close': L.closeDay(p, d, t); save(); toast('마감했어요!'); break;
+      case 'close':
+        L.closeDay(p, d, t); save(); toast('마감했어요!');
+        if (sundayOn() && L.weekday(d) === 0 && lastBackup() !== t) { ui.modal = backupModal; window.scrollTo(0, 0); }
+        break;
+      case 'exportclose': exportJSON(); ui.modal = null; break;
+      case 'sundaytoggle': localStorage.setItem(SKEY, sundayOn() ? '0' : '1'); toast(sundayOn() ? '일요일 백업 알림을 켰어요' : '일요일 백업 알림을 껐어요'); break;
       case 'reopen': L.reopenDay(p, d); ui.editDate = null; save(); toast('마감을 취소했어요'); break;
       case 'edit': ui.editDate = ui.editDate === d ? null : d; if (!ui.editDate) toast('고친 내용으로 계획을 다시 계산했어요'); break;
       case 'nextday': data.testToday = L.addDays(data.testToday, 1); ui.viewDate = null; save(); runAutoClose(); break;
