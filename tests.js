@@ -536,6 +536,44 @@ test('[새 C-3] 복습 간격을 바꾸면 그대로 적용', function () {
   eq(Object.keys(L.simulate(p, MON, MON).revDue).sort(), ['R|voca|0|2', 'R|voca|0|5']);
 });
 
+/* ===== D단계: 복습 예상 시간 ===== */
+test('[새 D-1] 복습 예상 시간: 기본값과 오늘 총시간', function () {
+  var rows = L.rowsFromCSV(csvText).rows;
+  var p = makePlan([korSub({ daily: 2 }), wordSub(), { id: 'math', type: 'table', name: '수학', rows: rows, daily: 1, mode: 'A', fiveStep: true }], MON, '2026-06-30');
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);    // 국어 1·2강, 영단어 Day 1, 수학 1일차
+  var strip = function (arr) { return arr.map(function (x) { return [x[0], x[1]]; }); };
+  var first = function (date) { return strip(mins(date).filter(function (x) { return x[2].indexOf('F|math|0|') === 0; })); };
+  var mins = function (date) {
+    var sim = L.simulate(p, MON, date), day = sim.days[sim.days.length - 1];
+    return L.groupReviews(sim.subs, day.reviews, date, sim.revDue).map(function (e) { return [e.kind, L.reviewMinutes(p, sim.subs, e), e.ids[0]]; });
+  };
+  eq(strip(mins(TUE)), [['spaced', 15]], '화: 단어 Day 1 복습 15분');
+  var wed = mins(WED);
+  eq(strip(wed.filter(function (x) { return x[0] === 'skim'; })), [['skim', 10]], '수: 훑어보기 10분');
+  eq(strip(mins(THU).filter(function (x) { return x[0] === 'spaced'; })), [['spaced', 30], ['spaced', 15], ['spaced', 15]], '목: 국어 1·2강 3일 복습 30분 + 단어 Day1 3일 복습 15분 + (예상) 단어 Day3 1일 복습 15분');
+  eq(first('2025-12-15'), [['five', 25]], '수학 5단계 2차 25분');
+  eq(first('2025-12-29'), [['five', 20]], '3차 20분');
+  eq(first('2026-01-12'), [['five', 15]], '4차 15분');
+  eq(first('2026-01-26'), [['five', 10]], '5차 10분');
+  eq(strip(mins(SUN).filter(function (x) { return x[0] === 'weekly'; })), [['weekly', 30]], '이번 주 복습 30분');
+  p.revMin = { skim: 5, five: [40] };                // 설정에서 바꾸면
+  eq(strip(mins(WED).filter(function (x) { return x[0] === 'skim'; })), [['skim', 5]], '훑어보기 5분으로');
+  eq(first('2025-12-15'), [['five', 40]], '5단계 2차 40분으로');
+  p.subjects[0].weeklyMin = 45;
+  eq(strip(mins(SUN).filter(function (x) { return x[0] === 'weekly'; })), [['weekly', 45]], '과목별 주간 복습 시간');
+});
+
+test('[새 D-2] 하루 상태는 새 진도와 복습을 모두 포함', function () {
+  var p = makePlan([wordSub()], MON, '2026-02-28');
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);
+  var tue = L.dayOf(p, TUE, TUE);
+  tue.shown.voca.forEach(function (id) { L.setCheck(p, TUE, id, true); });   // 새 Day만 하고 복습은 안 함
+  L.closeDay(p, TUE, TUE);
+  eq(L.dayOf(p, WED, TUE).status, 'missed', '복습을 안 하면 빨간 X');
+  L.setCheck(p, TUE, 'R|voca|0|1', true);
+  eq(L.dayOf(p, WED, TUE).status, 'done', '복습까지 하면 초록 체크');
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);

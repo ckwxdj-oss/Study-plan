@@ -193,6 +193,15 @@ button{cursor:pointer;touch-action:manipulation}
 .howbox ol{margin:0;padding-left:28px}
 .kind{font-size:13px;font-weight:700;padding:1px 8px;border-radius:99px;background:var(--gray-soft);color:var(--sub);align-self:flex-start}
 
+/* 오늘 화면 구역 */
+.zone{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:22px 0 12px;font-size:23px}
+.zone .sum{font-size:16px;font-weight:700;color:var(--sub)}
+.mins{flex:none;align-self:center;font-size:14px;font-weight:700;padding:4px 10px;border-radius:99px;background:var(--gray-soft);color:var(--sub);white-space:nowrap}
+.chk.on .mins{background:transparent}
+.summary{display:flex;justify-content:center;gap:8px 18px;flex-wrap:wrap;font-weight:700;color:var(--sub);margin:-4px 0 6px}
+.minrow{display:grid;grid-template-columns:1fr 120px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.minrow input{min-height:50px;text-align:center;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
+
 /* 모달 */
 .modal{position:fixed;inset:0;background:rgba(10,15,25,.5);display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:50}
 .modal .sec{width:100%;max-width:640px;margin:0}
@@ -524,6 +533,27 @@ var StudyLogic = (function () {
     return { days: days, done: done, subs: subs, closedCount: closedCount, finish: finish, atEnd: atEnd, revDue: revDue };
   }
 
+  /* ---------- 복습 예상 시간 (분) ----------
+     plan.revMin 으로 바꿀 수 있음. 이번 주 복습은 과목마다(s.weeklyMin) */
+  var DEFAULT_MIN = { skim: 10, spaced: 15, word: 15, five: [25, 20, 15, 10] };
+  function revMinutes(plan) {
+    var m = plan.revMin || {}, d = DEFAULT_MIN;
+    var num = function (v, def) { return v == null || isNaN(v) ? def : Math.max(0, +v); };
+    return { skim: num(m.skim, d.skim), spaced: num(m.spaced, d.spaced), word: num(m.word, d.word),
+      five: [0, 1, 2, 3].map(function (i) { return num((m.five || [])[i], d.five[i]); }) };
+  }
+  // 복습 묶음(groupReviews 결과 하나)의 예상 시간
+  function reviewMinutes(plan, subs, e) {
+    var m = revMinutes(plan), x = subs.filter(function (y) { return y.s.id === e.sid; })[0];
+    var n = Math.max(1, (e.units || []).length);
+    if (e.kind === 'skim') return m.skim;
+    if (e.kind === 'merged') return Math.max(m.skim, m.spaced * n);   // 훑어보기+3일 복습: 3일 복습이 훑어보기를 포함
+    if (e.kind === 'spaced') return (x && x.s.type === 'spaced' ? m.word : m.spaced) * n;
+    if (e.kind === 'five') return m.five[(e.stage || 2) - 2] || 0;
+    if (e.kind === 'weekly') return x && x.s.weeklyMin != null ? +x.s.weeklyMin : 30;
+    return 0;
+  }
+
   /* ---------- 복습 항목 설명 / 묶기 ----------
      R|과목|묶음|k     : k일 뒤 복습 (국어·영어 3·7일, 영단어 1·3·7일)
      F|과목|일차|n     : 수학 5단계 복습 n차
@@ -664,6 +694,7 @@ var StudyLogic = (function () {
   function newPlanFrom(old, today, cfg) {
     var done = simulate(old, today, today).done;
     var plan = { id: cfg.id, name: cfg.name, start: cfg.start, end: cfg.end, restDays: [], restWeekdays: (old.restWeekdays || []).slice(), pauses: [], days: {}, carry: {}, subjects: [] };
+    if (old.revMin) plan.revMin = JSON.parse(JSON.stringify(old.revMin));
     old.subjects.forEach(function (s) {
       var c = (cfg.subjects || []).filter(function (x) { return x.id === s.id; })[0];
       if (!c || !c.keep) return;
@@ -757,7 +788,7 @@ var StudyLogic = (function () {
     pad: pad, parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, weekday: weekday, diffDays: diffDays,
     itemId: itemId, unitsOf: unitsOf, parseCSV: parseCSV, itemsFor: itemsFor, rowsFromCSV: rowsFromCSV, quotaFor: quotaFor, periodFor: periodFor, isRestDay: isRestDay, isPaused: isPaused, switchPlan: switchPlan, doesDay: doesDay, nextDoDay: nextDoDay, pull: pull, unpull: unpull, pickItems: pickItems,
     simulate: simulate, autoClose: autoClose, closeDay: closeDay, reopenDay: reopenDay, setCheck: setCheck,
-    dayOf: dayOf, progress: progress, reviewInfo: reviewInfo, groupReviews: groupReviews, isFiveSkip: isFiveSkip, forecast: forecast, stats: stats, newPlanFrom: newPlanFrom
+    dayOf: dayOf, progress: progress, reviewInfo: reviewInfo, groupReviews: groupReviews, revMinutes: revMinutes, reviewMinutes: reviewMinutes, isFiveSkip: isFiveSkip, forecast: forecast, stats: stats, newPlanFrom: newPlanFrom
   };
 })();
 if (typeof module !== 'undefined') module.exports = StudyLogic;
@@ -987,6 +1018,14 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     }
 
     var offList = [];
+    var newCount = Object.keys(day.shown).filter(function (k) { return k !== '_rev'; }).reduce(function (a, k) { return a + day.shown[k].length; }, 0);
+    var rsum = reviewSummary(p, sim, day, rec);
+    if (newCount || rsum.list.length) {
+      h += '<div class="summary"><span>📘 새로 배울 것 ' + newCount + '개</span><span>🔁 복습 ' + rsum.list.length + '개' +
+        (rsum.list.length ? ' (⏱ ' + fmtMin(rsum.total) + ')' : '') + '</span></div>';
+    }
+    h += '<h2 class="zone">📘 새로 배울 것</h2>';
+    if (!newCount && !day.rest) h += '<p class="hint">오늘은 새로 배울 진도가 없어요.</p>';
     h += '<div class="cards">';
     sim.subs.forEach(function (x) {
       var s = x.s, ids = day.shown[s.id] || [];
@@ -1048,7 +1087,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       h += '</div>';
     });
     h += '</div>';
-    h += renderReviews(sim, day, rec, editing);
+    h += renderReviews(p, sim, day, rec, editing);
     if (offList.length) h += '<p class="hint" style="margin-top:14px">😌 오늘 안 하는 과목: ' + offList.join(', ') + '</p>';
 
     // 백업 알림
@@ -1084,12 +1123,24 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
 
   var HOW = '<div class="howbox"><ol><li>교재의 개념 설명 부분을 천천히 읽기</li><li>그날 배운 것과 푼 문제를 머릿속으로 정리하기</li>' +
     '<li>빈 종이에 수업 내용을 순서대로 소리 내어 설명하기</li><li>문제는 풀이 단계마다 왜 그렇게 하는지 이유를 말하며 설명하기</li></ol></div>';
+  function fmtMin(m) { m = Math.round(m); return m >= 60 ? Math.floor(m / 60) + '시간' + (m % 60 ? ' ' + m % 60 + '분' : '') : m + '분'; }
   var KIND = { skim: '훑어보기', merged: '훑어보기+3일', spaced: '간격 복습', five: '5단계 복습', weekly: '이번 주 복습' };
   // 오늘 화면의 복습 목록
-  function renderReviews(sim, day, rec, editing) {
+  function reviewSummary(p, sim, day, rec) {
     var list = L.groupReviews(sim.subs, day.reviews || [], day.date, sim.revDue);
-    if (!list.length) return '';
-    var h = '<div class="sec revsec" style="margin-top:16px"><h2>🔁 복습</h2><div class="revlist">';
+    var total = 0, left = 0;
+    list.forEach(function (e) {
+      e.min = L.reviewMinutes(p, sim.subs, e); total += e.min;
+      if (!e.ids.every(function (id) { return rec.checked && rec.checked[id]; })) left += e.min;
+    });
+    return { list: list, total: total, left: left };
+  }
+  function renderReviews(p, sim, day, rec, editing) {
+    var rs = reviewSummary(p, sim, day, rec), list = rs.list;
+    var h = '<h2 class="zone">🔁 복습' + (list.length ? '<span class="sum">⏱ 오늘 총 ' + fmtMin(rs.total) +
+      (day.status !== 'future' && rs.left && rs.left < rs.total ? ' · 남은 ' + fmtMin(rs.left) : '') + '</span>' : '') + '</h2>';
+    if (!list.length) return h + '<p class="hint">오늘은 복습이 없어요.</p>';
+    h += '<div class="sec revsec"><div class="revlist">';
     list.forEach(function (e) {
       var od = e.ids.some(function (id) { return (day.overdue || []).indexOf(id) >= 0; });
       var on = day.status !== 'future' && e.ids.every(function (id) { return rec.checked && rec.checked[id]; });
@@ -1098,7 +1149,8 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       if (day.closed && !on) cls += ' miss';
       var key = e.ids[0];
       h += '<div><div class="revrow"><button class="' + cls + '" data-act="togglerev" data-ids="' + esc(e.ids.join(',')) + '"><span class="box">✓</span><span class="lbl">' +
-        '<span class="kind">' + (od ? '⚠️ 밀린 복습' : KIND[e.kind] || '복습') + '</span><b>' + esc(e.title) + '</b>' + (e.detail ? '<small>' + esc(e.detail) + '</small>' : '') + '</span></button>' +
+        '<span class="kind">' + (od ? '⚠️ 밀린 복습' : KIND[e.kind] || '복습') + '</span><b>' + esc(e.title) + '</b>' + (e.detail ? '<small>' + esc(e.detail) + '</small>' : '') + '</span>' +
+        '<span class="mins" style="margin-left:auto">⏱ ' + fmtMin(e.min) + '</span></button>' +
         (e.how ? '<button class="howbtn" data-act="how" data-k="' + esc(key) + '">📖 방법</button>' : '') + '</div>' +
         (e.how && ui.how && ui.how[key] ? HOW : '') + '</div>';
     });
@@ -1341,6 +1393,14 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     h += '<div class="sec"><h2>🧪 테스트 모드</h2><div class="switch"><div>날짜를 마음대로 바꿔 보며 앱을 시험해 볼 수 있어요.<br><span class="hint">테스트 모드의 기록은 실제 기록과 따로 저장돼요. 끄면 원래대로 돌아와요.</span></div>' +
       '<button class="toggle ' + (testMode ? 'on' : '') + '" data-act="testmode" aria-label="테스트 모드"></button></div>' +
       (testMode ? '<div class="btnrow" style="justify-content:flex-start"><button class="btn red" data-act="testreset">테스트 데이터 새로 시작 (실제 데이터 복사)</button></div>' : '') + '</div>';
+
+    var rm = L.revMinutes(p);
+    var mrow = function (label, id, v) { return '<label class="minrow"><span>' + label + '</span><input id="' + id + '" type="number" inputmode="numeric" min="0" value="' + v + '"></label>'; };
+    h += '<div class="sec"><h2>⏱ 복습 예상 시간 (분)</h2><p class="hint" style="margin-top:0">오늘 화면의 복습 총시간 계산에 써요. 이번 주 복습 시간은 과목마다 「수정」에서 바꿔요.</p>' +
+      mrow('지난번 훑어보기', 'rmSkim', rm.skim) + mrow('국어·영어 간격 복습 (강 하나당)', 'rmSpaced', rm.spaced) + mrow('단어 복습 (Day 하나당)', 'rmWord', rm.word) +
+      mrow('수학 5단계 복습 2차', 'rmF2', rm.five[0]) + mrow('수학 5단계 복습 3차', 'rmF3', rm.five[1]) +
+      mrow('수학 5단계 복습 4차', 'rmF4', rm.five[2]) + mrow('수학 5단계 복습 5차', 'rmF5', rm.five[3]) +
+      '<div class="btnrow" style="justify-content:flex-start"><button class="btn pri" data-act="saverevmin">시간 저장</button><button class="btn" data-act="resetrevmin">기본값으로</button></div></div>';
 
     var since = daysSinceBackup();
     h += '<div class="sec"><h2>💾 백업</h2>' +
@@ -1653,6 +1713,12 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       case 'how': { ui.how = ui.how || {}; var hk2 = b.getAttribute('data-k'); ui.how[hk2] = !ui.how[hk2]; break; }
       case 'subflag': { readAnyDraft(); var fk = b.getAttribute('data-k'); draft[fk] = !draft[fk]; render(); return; }
       case 'fivemode': readTableDraft(); draft.fiveStep = b.getAttribute('data-v') === 'five'; render(); return;
+      case 'saverevmin': {
+        var gv = function (id) { var n = parseInt(document.getElementById(id).value, 10); return isNaN(n) ? null : Math.max(0, n); };
+        p.revMin = { skim: gv('rmSkim'), spaced: gv('rmSpaced'), word: gv('rmWord'), five: [gv('rmF2'), gv('rmF3'), gv('rmF4'), gv('rmF5')] };
+        save(); toast('복습 시간을 저장했어요'); break;
+      }
+      case 'resetrevmin': delete p.revMin; save(); toast('기본값으로 되돌렸어요'); break;
       case 'pull': L.pull(p, d, b.getAttribute('data-id')); save(); toast('다음 차례 진도를 오늘로 당겨왔어요'); break;
       case 'unpull': L.unpull(p, d, b.getAttribute('data-id')); save(); toast('당겨오기를 취소했어요'); break;
       case 'subwd': {
