@@ -574,6 +574,26 @@ test('[새 D-2] 하루 상태는 새 진도와 복습을 모두 포함', functio
   eq(L.dayOf(p, WED, TUE).status, 'done', '복습까지 하면 초록 체크');
 });
 
+test('[새 계획] 요일·복습·5단계·간격 복습형·복습 시간 설정이 새 계획에도 그대로', function () {
+  var rows = L.rowsFromCSV(csvText).rows;
+  var old = makePlan([korSub({ weeklyMin: 40 }), wordSub(), { id: 'math', type: 'table', name: '수학', rows: rows, daily: 1, mode: 'A', fiveStep: true }], MON, '2026-02-28');
+  old.revMin = { skim: 5 }; old.restWeekdays = [0];
+  checkAll(old, MON, MON); L.closeDay(old, MON, MON);
+  var np = L.newPlanFrom(old, TUE, { id: 'n', name: '1학기', start: TUE, end: '2026-07-20', subjects: [
+    { id: 'kor', keep: true, carry: true, wk: 1, we: 1 }, { id: 'voca', keep: true, carry: true, wk: 1, we: 1 }, { id: 'math', keep: true, carry: false, wk: 1, we: 1 }] });
+  var k = np.subjects[0], v = np.subjects[1], m = np.subjects[2];
+  eq([k.weekdays, k.spaced, k.skim, k.weekly, k.weeklyMin], [wk('월수목토'), [3, 7], true, true, 40], '국어 요일·복습');
+  eq([v.type, v.spaced, v.words], ['spaced', [1, 3, 7], 50], '영단어 간격 복습형');
+  eq([m.fiveStep, L.progress(L.unitsOf(m), new Set()).totalUnits], [true, 95], '수학 5단계');
+  eq([np.revMin, np.restWeekdays], [{ skim: 5 }, [0]], '복습 시간·매주 쉬는 요일');
+  // 새 계획에서도 복습이 그대로 동작
+  checkAll(np, WED, WED); L.closeDay(np, WED, WED);           // 수: 국어 2강(이어받기), 영단어 Day 2, 수학 1일차(처음부터)
+  var sat = L.dayOf(np, WED, SAT).reviews;
+  eq(has(sat, 'R|kor|1|3'), true, '국어 3일 복습');
+  eq(L.dayOf(np, WED, THU).reviews.indexOf('R|voca|1|1') >= 0, true, '영단어 1일 복습');
+  eq(has(L.dayOf(np, WED, '2025-12-17').reviews, 'F|' + m.id + '|0|2'), true, '수학 5단계 2차');
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);
