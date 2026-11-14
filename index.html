@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<title>공부 계획 체크</title>
+<style>
+:root{
+  --bg:#f3f5f9; --card:#ffffff; --text:#1c2333; --sub:#5b6478; --line:#e2e6ee;
+  --accent:#2563eb; --accent-soft:#e6eefe; --green:#16a34a; --green-soft:#e3f6ea;
+  --red:#dc2626; --red-soft:#fde8e8; --orange:#ea7a0c; --orange-soft:#fff1e2;
+  --gray-soft:#eef0f4; --shadow:0 2px 10px rgba(20,30,60,.07);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#11151d; --card:#1b212c; --text:#e9edf5; --sub:#9aa3b5; --line:#2c3443;
+    --accent:#5b8cff; --accent-soft:#1f2b47; --green:#34c26b; --green-soft:#16301f;
+    --red:#f05252; --red-soft:#3a1c1e; --orange:#f59e3b; --orange-soft:#3a2a17;
+    --gray-soft:#242b37; --shadow:none;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif;font-size:18px;line-height:1.5;touch-action:manipulation;padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation}
+.wrap{max-width:1200px;margin:0 auto;padding:16px 20px}
+
+/* 상단 */
+.testbar{background:var(--orange);color:#fff;padding:10px 20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;font-weight:600}
+.testbar input{background:#fff;color:#222;border:0;border-radius:10px;padding:8px 10px;min-height:48px}
+.testbar button{background:#fff;color:var(--orange);border:0;border-radius:10px;padding:8px 16px;min-height:48px;font-weight:700}
+
+.datehead{display:flex;align-items:center;gap:12px;margin:8px 0 6px}
+.datehead h1{flex:1;text-align:center;margin:0;font-size:28px}
+.datehead .sub{display:block;font-size:16px;font-weight:500;color:var(--sub)}
+.navbtn{width:60px;height:60px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:26px;box-shadow:var(--shadow)}
+.todaybtn{display:block;margin:0 auto 10px;border:0;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:8px 20px;min-height:48px;font-weight:700}
+
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 14px;font-weight:700;font-size:16px}
+.b-done{background:var(--green-soft);color:var(--green)}
+.b-missed{background:var(--red-soft);color:var(--red)}
+.b-open{background:var(--accent-soft);color:var(--accent)}
+.b-future,.b-empty{background:var(--gray-soft);color:var(--sub)}
+.b-rest{background:var(--orange-soft);color:var(--orange)}
+.statusline{text-align:center;margin-bottom:14px}
+
+/* 과목 카드 */
+.cards{display:grid;grid-template-columns:1fr;gap:16px}
+@media (orientation:landscape) and (min-width:900px){ .cards{grid-template-columns:1fr 1fr} }
+.card{background:var(--card);border-radius:20px;padding:18px 18px 12px;box-shadow:var(--shadow);border:1px solid var(--line)}
+.card-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.card-h h2{margin:0;font-size:22px}
+.card-h .book{color:var(--sub);font-size:16px}
+.card-meta{color:var(--sub);font-size:15px;margin-bottom:10px}
+.bar{height:8px;background:var(--gray-soft);border-radius:99px;overflow:hidden;margin:4px 0 12px}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.unit{border-top:1px solid var(--line);padding:12px 0}
+.unit-title{font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tag{font-size:13px;font-weight:700;padding:2px 10px;border-radius:99px;background:var(--orange-soft);color:var(--orange)}
+.tasks{display:flex;flex-wrap:wrap;gap:10px}
+.chk{display:flex;align-items:center;gap:12px;min-height:60px;padding:8px 18px 8px 12px;border-radius:14px;border:2px solid var(--line);background:var(--card);text-align:left;flex:1 1 200px;font-weight:600}
+.chk .box{flex:none;width:36px;height:36px;border-radius:10px;border:3px solid #b6bfce;display:flex;align-items:center;justify-content:center;font-size:22px;color:transparent;font-weight:900}
+.chk.on{border-color:var(--green);background:var(--green-soft)}
+.chk.on .box{background:var(--green);border-color:var(--green);color:#fff}
+.chk.prev{opacity:.55}
+.chk.locked{cursor:default}
+.chk.miss{border-color:var(--red)}
+.empty{color:var(--sub);padding:10px 0 14px}
+
+/* 마감 */
+.closebox{margin:22px 0 8px;text-align:center}
+.bigbtn{border:0;border-radius:18px;min-height:68px;padding:12px 36px;font-size:22px;font-weight:800;background:var(--accent);color:#fff;box-shadow:var(--shadow)}
+.bigbtn.ghost{background:var(--card);color:var(--accent);border:2px solid var(--accent)}
+.bigbtn.danger{background:var(--red)}
+.btnrow{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:14px}
+.result{background:var(--card);border-radius:20px;padding:20px;border:1px solid var(--line);margin:20px 0;box-shadow:var(--shadow)}
+.result h3{margin:0 0 10px;font-size:22px}
+.result.ok{border-color:var(--green)} .result.bad{border-color:var(--red)}
+.result ul{margin:6px 0 14px;padding-left:22px}
+.result textarea{width:100%;min-height:90px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:12px;resize:vertical}
+.hint{color:var(--sub);font-size:15px}
+.notice{background:var(--accent-soft);color:var(--accent);border-radius:14px;padding:12px 16px;margin:10px 0;font-weight:600}
+.notice.warn{background:var(--orange-soft);color:var(--orange)}
+
+/* 설정 */
+.sec{background:var(--card);border-radius:20px;padding:20px;margin-bottom:18px;border:1px solid var(--line);box-shadow:var(--shadow)}
+.sec h2{margin:0 0 12px;font-size:22px}
+.field{display:block;margin-bottom:14px}
+.field>span{display:block;font-weight:700;margin-bottom:6px;font-size:16px}
+.field input,.field select{width:100%;min-height:54px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:8px 14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:600px){.grid2{grid-template-columns:1fr}}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:12px;min-height:52px;padding:8px 18px;font-weight:700}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.red{color:var(--red);border-color:var(--red)}
+.subrow{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+.subrow .nm{flex:1;min-width:180px}
+.subrow .nm b{display:block}
+.subrow .nm small{color:var(--sub)}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:60px}
+.toggle{width:72px;height:42px;border-radius:99px;border:0;background:#c3cad6;position:relative;flex:none}
+.toggle::after{content:"";position:absolute;top:4px;left:4px;width:34px;height:34px;border-radius:50%;background:#fff;transition:left .15s}
+.toggle.on{background:var(--orange)} .toggle.on::after{left:34px}
+.tasklist .trow{display:flex;gap:8px;margin-bottom:8px}
+.tasklist .trow input{flex:1}
+.tasklist .trow button{width:54px}
+
+/* 모달 */
+.modal{position:fixed;inset:0;background:rgba(10,15,25,.5);display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:50}
+.modal .sec{width:100%;max-width:640px;margin:0}
+
+/* 하단 탭 */
+.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:40}
+.tabs button{flex:1;border:0;background:none;min-height:76px;font-size:16px;font-weight:700;color:var(--sub);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.tabs button .ic{font-size:26px}
+.tabs button.on{color:var(--accent)}
+
+.toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:#222a38;color:#fff;padding:14px 22px;border-radius:14px;font-weight:600;z-index:60;max-width:90vw;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- ===================================================================
+     밀림 계산 로직 (화면 코드와 분리됨, tests.js 가 이 부분만 꺼내서 테스트함)
+     =================================================================== -->
+<script id="logic">
+var StudyLogic = (function () {
+  'use strict';
+  var DAY = 86400000;
+
+  /* ---------- 날짜 도우미 (항상 'YYYY-MM-DD' 문자열) ---------- */
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function parseDate(s) { var p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
+  function fmtDate(t) { var d = new Date(t); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); }
+  function addDays(s, n) { return fmtDate(parseDate(s) + n * DAY); }
+  function weekday(s) { return new Date(parseDate(s)).getUTCDay(); } // 0=일 ... 6=토
+  function diffDays(a, b) { return Math.round((parseDate(b) - parseDate(a)) / DAY); }
+
+  /* ---------- 과목 → 진도 줄(묶음 목록) ---------- */
+  function itemId(sid, u, t) { return sid + '|' + u + '|' + t; }
+  function unitTitle(s, i) {
+    var n = i + 1, name = s.unitName || '';
+    return /^[A-Za-z]/.test(name) ? name + ' ' + n : n + name;
+  }
+  // 묶음(unit) = { index, title, items:[{id,label}] }
+  function unitsOf(s) {
+    var units = [];
+    if (s.type === 'table') {
+      (s.rows || []).forEach(function (r, i) {
+        units.push({ index: i, title: r.title, items: r.items.map(function (lbl, k) { return { id: itemId(s.id, i, k), label: lbl }; }) });
+      });
+    } else {
+      var tasks = (s.tasks || []).filter(function (t) { return t && String(t).trim(); });
+      var total = Math.max(0, s.total | 0);
+      for (var i = 0; i < total; i++) {
+        var title = unitTitle(s, i);
+        units.push({
+          index: i, title: title,
+          items: tasks.length
+            ? tasks.map(function (t, k) { return { id: itemId(s.id, i, k), label: t }; })
+            : [{ id: itemId(s.id, i, 0), label: title }]
+        });
+      }
+    }
+    return units;
+  }
+
+  /* ---------- 하루 분량 ---------- */
+  function isRestDay(plan, date) { return (plan.restDays || []).indexOf(date) >= 0; }
+  function quotaFor(plan, s, date) {
+    if (date < plan.start || date > plan.end) return 0;
+    if (isRestDay(plan, date)) return 0;
+    return Math.max(0, s.daily | 0);
+  }
+
+  /* ---------- 핵심: 줄 앞에서부터 "안 끝난 묶음 n개"의 남은 항목 고르기 ----------
+     mode 'A' : 일부만 한 묶음도 1자리를 차지 (기본)
+     mode 'B' : 일부만 한 묶음의 남은 항목은 자리를 차지하지 않고 덤으로 붙음  */
+  function pickItems(units, done, n, mode) {
+    var out = [], count = 0;
+    for (var i = 0; i < units.length && count < n; i++) {
+      var items = units[i].items;
+      var rem = items.filter(function (it) { return !done.has(it.id); });
+      if (!rem.length) continue;
+      var partial = rem.length < items.length;
+      rem.forEach(function (it) { out.push(it.id); });
+      if (!(mode === 'B' && partial)) count++;
+    }
+    return out;
+  }
+
+  function flatten(shown) {
+    var all = [];
+    Object.keys(shown).forEach(function (k) { all = all.concat(shown[k]); });
+    return all;
+  }
+
+  /* ---------- 시뮬레이션: 계획 시작일부터 하루씩 진행 ----------
+     today : 오늘 날짜
+     until : 어디까지 계산할지 (기본 = today, 미래면 '예상')
+     opts.autoClose : today 이전의 마감 안 된 날을 자동 마감
+     opts.closeDate : 이 날짜를 마감
+     반환: { days:[{date, shown, items, missed, carried, status, rest, closed}], done, closedCount } */
+  function simulate(plan, today, until, opts) {
+    opts = opts || {};
+    until = until || today;
+    var done = new Set(Object.keys(plan.carry || {}).filter(function (k) { return plan.carry[k]; }));
+    var seen = new Set();
+    var subs = plan.subjects.map(function (s) { return { s: s, units: unitsOf(s) }; });
+    var known = new Set();
+    subs.forEach(function (x) { x.units.forEach(function (u) { u.items.forEach(function (it) { known.add(it.id); }); }); });
+    plan.days = plan.days || {};
+    var last = until < plan.end ? until : plan.end;
+    var days = [], closedCount = 0;
+
+    for (var d = plan.start; d <= last; d = addDays(d, 1)) {
+      var rec = plan.days[d];
+      var frozen = !!(rec && rec.closed && rec.shown);
+      var shown = {};
+      subs.forEach(function (x) {
+        var sid = x.s.id;
+        shown[sid] = frozen
+          ? (rec.shown[sid] || []).filter(function (id) { return known.has(id); })
+          : pickItems(x.units, done, quotaFor(plan, x.s, d), x.s.mode);
+      });
+
+      if (!frozen && ((opts.autoClose && d < today) || opts.closeDate === d)) {
+        rec = plan.days[d] = Object.assign({ checked: {}, memo: '' }, rec || {});
+        rec.closed = true;
+        rec.shown = JSON.parse(JSON.stringify(shown));
+        closedCount++;
+      }
+
+      var checked = (rec && rec.checked) || {};
+      Object.keys(checked).forEach(function (id) { if (checked[id]) done.add(id); });
+
+      var all = flatten(shown);
+      var carried = all.filter(function (id) { return seen.has(id); });
+      var rest = isRestDay(plan, d);
+      var closed = !!(rec && rec.closed);
+      var future = d > today;
+      var missed = future ? [] : all.filter(function (id) { return !done.has(id); });
+      var status;
+      if (rest) status = 'rest';
+      else if (future) status = 'future';
+      else if (!all.length) status = 'empty';
+      else if (!closed) status = 'open';
+      else status = missed.length ? 'missed' : 'done';
+
+      days.push({ date: d, shown: shown, items: all, missed: missed, carried: carried, status: status, rest: rest, closed: closed });
+
+      all.forEach(function (id) { seen.add(id); });
+      // 미래 예상: 앞으로의 날(그리고 예상 계산 중인 오늘)은 계획대로 다 한다고 가정
+      if (future || (d === today && last > today)) all.forEach(function (id) { done.add(id); });
+    }
+    return { days: days, done: done, subs: subs, closedCount: closedCount };
+  }
+
+  /* ---------- 마감 관련 동작 ---------- */
+  function autoClose(plan, today) {
+    return simulate(plan, today, addDays(today, -1), { autoClose: true }).closedCount;
+  }
+  function closeDay(plan, date, today) {
+    autoClose(plan, today);
+    simulate(plan, today, date, { closeDate: date });
+  }
+  function reopenDay(plan, date) {
+    var rec = plan.days[date];
+    if (rec) { delete rec.closed; delete rec.shown; }
+  }
+  function setCheck(plan, date, id, val) {
+    var rec = plan.days[date] = plan.days[date] || { checked: {}, memo: '' };
+    rec.checked = rec.checked || {};
+    if (val) rec.checked[id] = true; else delete rec.checked[id];
+  }
+  function dayOf(plan, today, date) {
+    var sim = simulate(plan, today, date);
+    var last = sim.days[sim.days.length - 1];
+    return last && last.date === date ? last : null;
+  }
+
+  /* ---------- 진행 상황 ---------- */
+  function progress(units, done) {
+    var full = 0, items = 0, doneItems = 0;
+    units.forEach(function (u) {
+      var c = u.items.filter(function (it) { return done.has(it.id); }).length;
+      items += u.items.length; doneItems += c;
+      if (c === u.items.length) full++;
+    });
+    return { doneUnits: full, totalUnits: units.length, doneItems: doneItems, totalItems: items };
+  }
+
+  return {
+    pad: pad, parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, weekday: weekday, diffDays: diffDays,
+    itemId: itemId, unitsOf: unitsOf, quotaFor: quotaFor, isRestDay: isRestDay, pickItems: pickItems,
+    simulate: simulate, autoClose: autoClose, closeDay: closeDay, reopenDay: reopenDay, setCheck: setCheck,
+    dayOf: dayOf, progress: progress
+  };
+})();
+if (typeof module !== 'undefined') module.exports = StudyLogic;
+</script>
+
+<!-- ===================================================================
+     화면 코드
+     =================================================================== -->
+<script>
+(function () {
+  'use strict';
+  var L = StudyLogic;
+  var KEY = 'studyplan.v1', TKEY = 'studyplan.test.v1', MODEKEY = 'studyplan.testmode';
+  var testMode = localStorage.getItem(MODEKEY) === '1';
+  var data;
+  var ui = { tab: 'today', viewDate: null, editDate: null, modal: null, lastToday: null };
+
+  /* ---------- 기본 도우미 ---------- */
+  function uid() { return 's' + Math.random().toString(36).slice(2, 9); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function realToday() { var d = new Date(); return d.getFullYear() + '-' + L.pad(d.getMonth() + 1) + '-' + L.pad(d.getDate()); }
+  function today() { return testMode ? data.testToday : realToday(); }
+  function korDate(s) { var p = s.split('-'); return (+p[1]) + '월 ' + (+p[2]) + '일 (' + '일월화수목금토'[L.weekday(s)] + ')'; }
+  function plan() { return data.plans.filter(function (p) { return p.id === data.activePlanId; })[0]; }
+  function toast(msg) {
+    var t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+    document.body.appendChild(t); setTimeout(function () { t.remove(); }, 2600);
+  }
+
+  /* ---------- 예시 데이터 ---------- */
+  function sampleData(start) {
+    var end = '2027-02-28';
+    if (end <= start) end = L.addDays(start, 60);
+    var p = {
+      id: 'p' + Date.now(), name: '겨울방학 계획', start: start, end: end, restDays: [], days: {}, carry: {},
+      subjects: [
+        { id: uid(), type: 'numbered', name: '국어 인강', book: '국어 개념 강좌', unitName: '강', total: 40, daily: 2, tasks: ['강의 듣기', '복습'] },
+        { id: uid(), type: 'numbered', name: '영어 인강', book: '영어 개념 강좌', unitName: '강', total: 30, daily: 1, tasks: ['강의 듣기', '복습'] },
+        { id: uid(), type: 'numbered', name: '영단어', book: '수능 영단어', unitName: 'Day', total: 40, daily: 1, tasks: [] }
+      ]
+    };
+    return { version: 1, activePlanId: p.id, plans: [p] };
+  }
+
+  /* ---------- 저장 / 불러오기 ---------- */
+  function load() {
+    var raw = localStorage.getItem(testMode ? TKEY : KEY);
+    try { data = raw ? JSON.parse(raw) : null; } catch (e) { data = null; }
+    if (!data) {
+      if (testMode) {
+        var r = localStorage.getItem(KEY);
+        data = r ? JSON.parse(r) : sampleData(realToday());
+        data.testToday = realToday();
+      } else {
+        data = sampleData(realToday());
+      }
+      save();
+    }
+    if (testMode && !data.testToday) data.testToday = realToday();
+  }
+  function save() { localStorage.setItem(testMode ? TKEY : KEY, JSON.stringify(data)); }
+
+  /* 지난 날 자동 마감 */
+  function runAutoClose(silent) {
+    var p = plan(); if (!p) return;
+    var n = L.autoClose(p, today());
+    if (n) { save(); if (!silent) toast('마감하지 않은 지난 ' + n + '일을 자동으로 마감했어요'); }
+    ui.lastToday = today();
+  }
+
+  /* ---------- 렌더링 ---------- */
+  function render() {
+    var app = document.getElementById('app');
+    var h = '';
+    if (testMode) {
+      h += '<div class="testbar">🧪 테스트 모드 · 오늘을 <input type="date" data-act="testdate" value="' + data.testToday + '"> 로 가정' +
+        '<button data-act="nextday">다음 날로 ▶</button></div>';
+    }
+    h += '<div class="wrap">' + (ui.tab === 'today' ? renderToday() : renderSettings()) + '</div>';
+    h += '<nav class="tabs">' +
+      tabBtn('today', '📅', '오늘') + tabBtn('settings', '⚙️', '설정') + '</nav>';
+    if (ui.modal) h += ui.modal();
+    app.innerHTML = h;
+  }
+  function tabBtn(id, ic, label) {
+    return '<button data-act="tab" data-tab="' + id + '" class="' + (ui.tab === id ? 'on' : '') + '"><span class="ic">' + ic + '</span>' + label + '</button>';
+  }
+
+  var STATUS = {
+    done: ['b-done', '✅ 다 했어요'], missed: ['b-missed', '❌ 못 한 게 있어요'], open: ['b-open', '✏️ 진행 중'],
+    future: ['b-future', '⏳ 아직 안 온 날 (예상)'], rest: ['b-rest', '💤 쉬는 날'], empty: ['b-empty', '할 일 없음']
+  };
+
+  function renderToday() {
+    var p = plan(), t = today();
+    var d = ui.viewDate || t;
+    var h = '<div class="datehead"><button class="navbtn" data-act="prev" aria-label="이전 날">‹</button>' +
+      '<h1>' + korDate(d) + '<span class="sub">' + (d === t ? '오늘' : (d < t ? L.diffDays(d, t) + '일 전' : L.diffDays(t, d) + '일 후')) + ' · ' + esc(p.name) + '</span></h1>' +
+      '<button class="navbtn" data-act="next" aria-label="다음 날">›</button></div>';
+    if (d !== t) h += '<button class="todaybtn" data-act="gotoday">오늘로 돌아가기</button>';
+
+    if (d < p.start) return h + '<div class="notice">계획 시작 전이에요. 계획은 ' + korDate(p.start) + '에 시작해요.</div>';
+    if (d > p.end) return h + '<div class="notice">계획 기간(' + korDate(p.end) + '까지)이 끝났어요. 설정에서 종료일을 바꿀 수 있어요.</div>';
+
+    var sim = L.simulate(p, t, d);
+    var day = sim.days[sim.days.length - 1];
+    var doneNow = L.simulate(p, t, t).done; // 실제로 지금까지 한 것
+    var rec = p.days[d] || { checked: {} };
+    var editing = ui.editDate === d;
+    var st = STATUS[day.status];
+    h += '<div class="statusline"><span class="badge ' + st[0] + '">' + st[1] + '</span></div>';
+    if (day.status === 'future') h += '<div class="notice">지금 진도를 기준으로, 그때까지 계획대로 했을 때의 예상 할 일이에요.</div>';
+    if (editing) h += '<div class="notice warn">✏️ 체크 고치는 중이에요. 고치면 이후 계획이 다시 계산돼요.</div>';
+
+    // 이 날짜 이전까지 완료된 것 (지난 날 화면에서 "원래 이미 했던 것" 표시용)
+    var doneBefore = d > p.start ? L.simulate(p, t, L.addDays(d, -1)).done : new Set();
+
+    h += '<div class="cards">';
+    sim.subs.forEach(function (x) {
+      var s = x.s, ids = day.shown[s.id] || [];
+      var pr = L.progress(x.units, doneNow);
+      var unitLabel = s.type === 'table' ? '일차' : s.unitName;
+      h += '<div class="card"><div class="card-h"><h2>' + esc(s.name) + '</h2><span class="book">' + esc(s.book || '') + '</span></div>';
+      h += '<div class="card-meta">하루 ' + L.quotaFor(p, s, d) + esc(unitLabel) + ' · 지금까지 ' + pr.doneUnits + '/' + pr.totalUnits + esc(unitLabel) + ' 완료</div>';
+      h += '<div class="bar"><i style="width:' + (pr.totalUnits ? Math.round(pr.doneUnits / pr.totalUnits * 100) : 0) + '%"></i></div>';
+      if (!ids.length) {
+        h += '<div class="empty">' + (day.rest ? '쉬는 날이에요 💤' : (pr.doneUnits === pr.totalUnits && pr.totalUnits ? '🎉 모두 끝냈어요!' : '이 날은 할 일이 없어요')) + '</div>';
+      }
+      // 묶음별로 모으기
+      var groups = [], byUnit = {};
+      ids.forEach(function (id) {
+        var u = +id.split('|')[1];
+        if (!byUnit[u]) { byUnit[u] = []; groups.push(u); }
+        byUnit[u].push(id);
+      });
+      groups.forEach(function (u) {
+        var unit = x.units[u];
+        var carried = byUnit[u].some(function (id) { return day.carried.indexOf(id) >= 0; });
+        h += '<div class="unit"><div class="unit-title">' + esc(unit.title) + (carried ? '<span class="tag">⟲ 밀린 할 일</span>' : '') + '</div><div class="tasks">';
+        byUnit[u].forEach(function (id) {
+          var k = +id.split('|')[2], it = unit.items[k];
+          var on, cls = 'chk', note = '';
+          if (day.status === 'future') { on = false; cls += ' locked'; }
+          else {
+            on = !!(rec.checked && rec.checked[id]);
+            if (!on && doneBefore.has(id)) { on = true; cls += ' prev'; note = ' (이전에 완료)'; }
+            if (day.closed && !editing) cls += ' locked';
+            if (day.closed && !on) cls += ' miss';
+          }
+          if (on) cls += ' on';
+          h += '<button class="' + cls + '" data-act="toggle" data-id="' + esc(id) + '"><span class="box">✓</span><span>' + esc(it.label) + esc(note) + '</span></button>';
+        });
+        h += '</div></div>';
+      });
+      h += '</div>';
+    });
+    h += '</div>';
+
+    // 마감 영역
+    if (day.status === 'future') return h;
+    if (!day.closed) {
+      var left = day.missed.length;
+      h += '<div class="closebox"><div class="hint">' + (day.items.length ? (left ? '남은 항목 ' + left + '개' : '🎉 오늘 할 일을 다 했어요!') : '') + '</div>' +
+        '<div class="btnrow"><button class="bigbtn" data-act="close">오늘 마감</button></div>' +
+        '<div class="hint" style="margin-top:8px">마감하면 못 한 항목은 다음 날로 넘어가요. 마감하지 않아도 날짜가 지나면 자동으로 마감돼요.</div></div>';
+      return h;
+    }
+    if (day.status === 'missed') {
+      h += '<div class="result bad"><h3>❌ 못 한 항목</h3><ul>';
+      day.missed.forEach(function (id) { h += '<li>' + esc(describe(sim.subs, id)) + '</li>'; });
+      h += '</ul><div class="hint">못 한 항목은 다음 날 그 과목 맨 앞에 나와요.</div>' +
+        '<label class="field" style="margin-top:12px"><span>못 한 이유 메모 (선택)</span><textarea data-act="memo" placeholder="예: 학원 보강이 있었음">' + esc(rec.memo || '') + '</textarea></label></div>';
+    } else if (day.status === 'done') {
+      h += '<div class="result ok"><h3>✅ 이 날 할 일을 모두 해냈어요!</h3></div>';
+    }
+    h += '<div class="btnrow">' +
+      '<button class="bigbtn ghost" data-act="edit">' + (editing ? '고치기 끝' : '체크 고치기') + '</button>' +
+      (d === t ? '<button class="bigbtn ghost" data-act="reopen">마감 취소</button>' : '') + '</div>';
+    return h;
+  }
+
+  function describe(subs, id) {
+    var p = id.split('|');
+    for (var i = 0; i < subs.length; i++) {
+      if (subs[i].s.id === p[0]) {
+        var u = subs[i].units[+p[1]]; if (!u) return id;
+        var it = u.items[+p[2]];
+        return subs[i].s.name + ' · ' + u.title + (it && it.label !== u.title ? ' · ' + it.label : '');
+      }
+    }
+    return id;
+  }
+
+  /* ---------- 설정 화면 ---------- */
+  function renderSettings() {
+    var p = plan();
+    var h = '';
+    h += '<div class="sec"><h2>📆 계획 기간</h2>' +
+      '<label class="field"><span>계획 이름</span><input id="pName" value="' + esc(p.name) + '"></label>' +
+      '<div class="grid2"><label class="field"><span>시작일</span><input type="date" id="pStart" value="' + p.start + '"></label>' +
+      '<label class="field"><span>종료일</span><input type="date" id="pEnd" value="' + p.end + '"></label></div>' +
+      '<button class="btn pri" data-act="saveplan">기간 저장</button></div>';
+
+    h += '<div class="sec"><h2>📚 과목</h2>';
+    p.subjects.forEach(function (s) {
+      var info = s.type === 'table' ? (s.rows || []).length + '일차 · 하루 ' + s.daily + '일차'
+        : '총 ' + s.total + s.unitName + ' · 하루 ' + s.daily + s.unitName + (s.tasks && s.tasks.length ? ' · [' + s.tasks.join('] [') + ']' : '');
+      h += '<div class="subrow"><div class="nm"><b>' + esc(s.name) + '</b><small>' + esc(s.book || '') + ' · ' + esc(info) + '</small></div>' +
+        '<button class="btn" data-act="editsub" data-id="' + s.id + '">수정</button>' +
+        '<button class="btn red" data-act="delsub" data-id="' + s.id + '">삭제</button></div>';
+    });
+    h += '<div class="btnrow" style="justify-content:flex-start"><button class="btn pri" data-act="addsub">＋ 번호형 과목 추가</button></div>' +
+      '<p class="hint">하루 분량을 바꾸면 이미 마감한 날은 그대로 두고, 오늘부터의 계획이 다시 계산돼요.</p></div>';
+
+    h += '<div class="sec"><h2>🧪 테스트 모드</h2><div class="switch"><div>날짜를 마음대로 바꿔 보며 앱을 시험해 볼 수 있어요.<br><span class="hint">테스트 모드의 기록은 실제 기록과 따로 저장돼요. 끄면 원래대로 돌아와요.</span></div>' +
+      '<button class="toggle ' + (testMode ? 'on' : '') + '" data-act="testmode" aria-label="테스트 모드"></button></div>' +
+      (testMode ? '<div class="btnrow" style="justify-content:flex-start"><button class="btn red" data-act="testreset">테스트 데이터 새로 시작 (실제 데이터 복사)</button></div>' : '') + '</div>';
+
+    h += '<div class="sec"><h2>⚠️ 초기화</h2><p class="hint">' + (testMode ? '테스트 모드' : '실제') + ' 데이터를 모두 지우고 예시 과목으로 다시 시작해요.</p>' +
+      '<button class="btn red" data-act="resetall">모든 데이터 지우기</button></div>';
+    return h;
+  }
+
+  /* ---------- 과목 편집 모달 ---------- */
+  var draft = null;
+  function openSubjectModal(s) {
+    draft = s ? JSON.parse(JSON.stringify(s)) : { id: uid(), type: 'numbered', name: '', book: '', unitName: '강', total: 20, daily: 1, tasks: ['강의 듣기', '복습'], _new: true };
+    ui.modal = subjectModal; render();
+  }
+  function subjectModal() {
+    var s = draft;
+    var h = '<div class="modal"><div class="sec"><h2>' + (s._new ? '과목 추가' : '과목 수정') + '</h2>' +
+      '<div class="grid2"><label class="field"><span>과목 이름</span><input id="sName" value="' + esc(s.name) + '" placeholder="예: 국어 인강"></label>' +
+      '<label class="field"><span>교재/강좌 이름</span><input id="sBook" value="' + esc(s.book) + '" placeholder="예: ○○ 개념 강좌"></label></div>' +
+      '<div class="grid2"><label class="field"><span>단위 이름</span><input id="sUnit" value="' + esc(s.unitName) + '" placeholder="강, Day, 회 …"></label>' +
+      '<label class="field"><span>총 단위 수</span><input id="sTotal" type="number" inputmode="numeric" min="1" value="' + s.total + '"></label></div>' +
+      '<label class="field"><span>하루 분량</span><input id="sDaily" type="number" inputmode="numeric" min="0" value="' + s.daily + '"></label>' +
+      '<div class="field"><span>세부 할 일 (없으면 단위 하나가 체크 1개)</span><div class="tasklist">';
+    s.tasks.forEach(function (t, i) {
+      h += '<div class="trow"><input data-task="' + i + '" class="field-in" value="' + esc(t) + '" style="min-height:54px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:8px 14px">' +
+        '<button class="btn" data-act="deltask" data-i="' + i + '">✕</button></div>';
+    });
+    h += '<button class="btn" data-act="addtask">＋ 세부 할 일 추가</button></div></div>' +
+      (s._new ? '' : '<p class="hint">⚠️ 세부 할 일의 순서를 바꾸거나 지우면 지난 체크 기록과 맞지 않을 수 있어요. 뒤에 추가하는 건 괜찮아요.</p>') +
+      '<div class="btnrow"><button class="bigbtn ghost" data-act="cancelsub">취소</button><button class="bigbtn" data-act="savesub">저장</button></div></div></div>';
+    return h;
+  }
+  function readDraft() {
+    var g = function (id) { var e = document.getElementById(id); return e ? e.value : ''; };
+    draft.name = g('sName').trim(); draft.book = g('sBook').trim(); draft.unitName = g('sUnit').trim();
+    draft.total = parseInt(g('sTotal'), 10) || 0; draft.daily = parseInt(g('sDaily'), 10); if (isNaN(draft.daily)) draft.daily = 0;
+    document.querySelectorAll('[data-task]').forEach(function (e) { draft.tasks[+e.getAttribute('data-task')] = e.value; });
+  }
+
+  /* ---------- 이벤트 ---------- */
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]'); if (!b) return;
+    var act = b.getAttribute('data-act'), p = plan(), t = today();
+    var d = ui.viewDate || t;
+    switch (act) {
+      case 'tab': ui.tab = b.getAttribute('data-tab'); ui.editDate = null; break;
+      case 'prev': ui.viewDate = L.addDays(d, -1); ui.editDate = null; break;
+      case 'next': ui.viewDate = L.addDays(d, 1); ui.editDate = null; break;
+      case 'gotoday': ui.viewDate = null; ui.editDate = null; break;
+      case 'toggle': {
+        var day = L.dayOf(p, t, d);
+        if (!day || day.status === 'future') { toast('아직 오지 않은 날은 체크할 수 없어요'); return; }
+        if (day.closed && ui.editDate !== d) { toast('마감된 날이에요. 아래 「체크 고치기」를 눌러 고칠 수 있어요'); return; }
+        var id = b.getAttribute('data-id');
+        var rec = p.days[d] || {};
+        L.setCheck(p, d, id, !(rec.checked && rec.checked[id]));
+        save(); break;
+      }
+      case 'close': L.closeDay(p, d, t); save(); toast('마감했어요!'); break;
+      case 'reopen': L.reopenDay(p, d); ui.editDate = null; save(); toast('마감을 취소했어요'); break;
+      case 'edit': ui.editDate = ui.editDate === d ? null : d; if (!ui.editDate) toast('고친 내용으로 계획을 다시 계산했어요'); break;
+      case 'nextday': data.testToday = L.addDays(data.testToday, 1); ui.viewDate = null; save(); runAutoClose(); break;
+      case 'testmode': {
+        testMode = !testMode;
+        localStorage.setItem(MODEKEY, testMode ? '1' : '0');
+        load(); ui.viewDate = null; ui.editDate = null; runAutoClose(true);
+        toast(testMode ? '테스트 모드를 켰어요' : '테스트 모드를 껐어요. 실제 데이터로 돌아왔어요'); break;
+      }
+      case 'testreset':
+        if (!confirm('테스트 데이터를 지우고 실제 데이터를 복사해서 새로 시작할까요?')) return;
+        localStorage.removeItem(TKEY); load(); runAutoClose(true); break;
+      case 'resetall':
+        if (!confirm('정말 ' + (testMode ? '테스트' : '실제') + ' 데이터를 모두 지울까요? 되돌릴 수 없어요.')) return;
+        localStorage.removeItem(testMode ? TKEY : KEY); load(); ui.viewDate = null; break;
+      case 'saveplan': {
+        var nm = document.getElementById('pName').value.trim() || '공부 계획';
+        var st = document.getElementById('pStart').value, en = document.getElementById('pEnd').value;
+        if (!st || !en || st > en) { toast('시작일이 종료일보다 앞이어야 해요'); return; }
+        if (st < p.start && st < t && !confirm('시작일을 앞당기면 지난 날들이 「못 한 날」로 자동 마감돼요. 계속할까요?')) return;
+        p.name = nm; p.start = st; p.end = en; save(); runAutoClose(); toast('저장했어요'); break;
+      }
+      case 'addsub': openSubjectModal(null); return;
+      case 'editsub': openSubjectModal(p.subjects.filter(function (s) { return s.id === b.getAttribute('data-id'); })[0]); return;
+      case 'delsub': {
+        var s = p.subjects.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+        if (!confirm('「' + s.name + '」 과목을 지울까요?')) return;
+        p.subjects = p.subjects.filter(function (x) { return x !== s; }); save(); break;
+      }
+      case 'addtask': readDraft(); draft.tasks.push(''); render(); return;
+      case 'deltask': readDraft(); draft.tasks.splice(+b.getAttribute('data-i'), 1); render(); return;
+      case 'cancelsub': ui.modal = null; draft = null; break;
+      case 'savesub': {
+        readDraft();
+        if (!draft.name) { toast('과목 이름을 적어 주세요'); return; }
+        if (draft.total < 1) { toast('총 단위 수는 1 이상이어야 해요'); return; }
+        draft.tasks = draft.tasks.map(function (x) { return x.trim(); }).filter(Boolean);
+        var isNew = draft._new; delete draft._new;
+        if (isNew) p.subjects.push(draft);
+        else p.subjects = p.subjects.map(function (x) { return x.id === draft.id ? draft : x; });
+        ui.modal = null; draft = null; save(); toast('저장했어요'); break;
+      }
+      default: return;
+    }
+    render();
+  });
+
+  document.addEventListener('input', function (e) {
+    var a = e.target.getAttribute('data-act');
+    if (a === 'memo') {
+      var p = plan(), d = ui.viewDate || today();
+      p.days[d] = p.days[d] || { checked: {} };
+      p.days[d].memo = e.target.value; save();
+    }
+  });
+  document.addEventListener('change', function (e) {
+    if (e.target.getAttribute('data-act') !== 'testdate' || !e.target.value) return;
+    var nd = e.target.value, p = plan();
+    if (nd < data.testToday) {
+      var later = Object.keys(p.days).filter(function (k) { return k > nd; });
+      if (later.length && !confirm('날짜를 되돌리면 ' + korDate(nd) + ' 이후의 테스트 기록이 지워져요. 계속할까요?')) { render(); return; }
+      later.forEach(function (k) { delete p.days[k]; });
+    }
+    data.testToday = nd; ui.viewDate = null; save(); runAutoClose(); render();
+  });
+
+  // 앱을 켜 둔 채 날짜가 바뀐 경우
+  function checkDateChange() { if (ui.lastToday !== today()) { runAutoClose(); ui.viewDate = null; render(); } }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) checkDateChange(); });
+  setInterval(checkDateChange, 60000);
+
+  load(); runAutoClose(); render();
+})();
+</script>
+</body>
+</html>
