@@ -180,6 +180,21 @@ test('8. 마감한 날의 체크를 고쳤을 때 이후 계획이 다시 계산
   eq(unitsShown(p, D2, D2, 'kor'), [1, 3], '1강이 다시 맨 앞에');
 });
 
+test('(예상) 종료일까지 몇 강 예정인지, 며칠 초과되는지', function () {
+  // 12/20~12/29 (10일), 30강을 하루 2강 → 종료일까지 20강, 10강 초과, 5일 더 필요
+  var p = makePlan([subj('kor', 30, 2), subj('voca', 5, 1)], D1, '2026-12-29');
+  var f = L.forecast(p, D1);
+  eq([f[0].doneNow, f[0].byEnd, f[0].total, f[0].overUnits], [0, 20, 30, 10], '국어');
+  eq(f[0].finishDate, '2027-01-03', '국어 예상 완료일');
+  eq(f[0].overDays, 5, '국어 초과 일수');
+  eq([f[1].byEnd, f[1].finishDate, f[1].spareDays], [5, '2026-12-24', 5], '영단어는 5일 여유');
+  // 첫날을 통째로 못 하면 하루씩 밀림
+  L.autoClose(p, D2);
+  var g = L.forecast(p, D2);
+  eq([g[0].byEnd, g[0].finishDate], [18, '2027-01-04'], '하루 밀린 뒤 국어');
+  eq(g[1].finishDate, '2026-12-25', '하루 밀린 뒤 영단어');
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);

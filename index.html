@@ -116,6 +116,33 @@ button{cursor:pointer;touch-action:manipulation}
 .tasklist .trow input{flex:1}
 .tasklist .trow button{width:54px}
 
+/* 달력 */
+.calwrap{display:grid;grid-template-columns:1fr;gap:18px}
+@media (orientation:landscape) and (min-width:900px){ .calwrap{grid-template-columns:1.15fr 1fr;align-items:start} .calside{position:sticky;top:12px} }
+.month h3{margin:6px 0 10px;font-size:20px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal .wd{text-align:center;font-size:14px;font-weight:700;color:var(--sub);padding:2px 0}
+.cal .wd:first-child{color:var(--red)} .cal .wd:nth-child(7){color:var(--accent)}
+.cell{min-height:66px;border-radius:12px;border:2px solid transparent;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px;font-weight:700;box-shadow:var(--shadow)}
+.cell .n{font-size:16px} .cell .i{font-size:20px;line-height:1}
+.cell.out{background:transparent;box-shadow:none;color:var(--line);cursor:default}
+.cell.s-done{background:var(--green-soft)} .cell.s-missed{background:var(--red-soft)}
+.cell.s-rest{background:var(--orange-soft)} .cell.s-open{background:var(--accent-soft)}
+.cell.today{border-color:var(--accent)}
+.cell.sel{border-color:var(--text)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:15px;color:var(--sub);margin:4px 0 14px}
+.fc{padding:12px 0;border-top:1px solid var(--line)}
+.fc:first-of-type{border-top:0}
+.fc b{font-size:18px}
+.fc .line{font-size:16px;margin-top:2px}
+.ok{color:var(--green);font-weight:700} .bad{color:var(--red);font-weight:700}
+.detail h3{margin:0 0 6px;font-size:22px}
+.dsub{margin-top:14px}
+.dsub h4{margin:0 0 6px;font-size:18px}
+.dsub ul{margin:0;padding-left:4px;list-style:none}
+.dsub li{padding:3px 0}
+.memo{background:var(--bg);border-radius:12px;padding:10px 14px;margin-top:12px;white-space:pre-wrap}
+
 /* 모달 */
 .modal{position:fixed;inset:0;background:rgba(10,15,25,.5);display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:50}
 .modal .sec{width:100%;max-width:640px;margin:0}
@@ -242,8 +269,8 @@ var StudyLogic = (function () {
 
   /* ---------- 하루 분량 ---------- */
   function isRestDay(plan, date) { return (plan.restDays || []).indexOf(date) >= 0; }
-  function quotaFor(plan, s, date) {
-    if (date < plan.start || date > plan.end) return 0;
+  function quotaFor(plan, s, date, ignoreEnd) {
+    if (date < plan.start || (date > plan.end && !ignoreEnd)) return 0;
     if (isRestDay(plan, date)) return 0;
     return Math.max(0, s.daily | 0);
   }
@@ -279,13 +306,25 @@ var StudyLogic = (function () {
   function simulate(plan, today, until, opts) {
     opts = opts || {};
     until = until || today;
-    var done = new Set(Object.keys(plan.carry || {}).filter(function (k) { return plan.carry[k]; }));
-    var seen = new Set();
     var subs = plan.subjects.map(function (s) { return { s: s, units: unitsOf(s) }; });
-    var known = new Set();
-    subs.forEach(function (x) { x.units.forEach(function (u) { u.items.forEach(function (it) { known.add(it.id); }); }); });
+    var known = new Set(), remain = {}, finish = {}, atEnd = null;
+    subs.forEach(function (x) {
+      remain[x.s.id] = 0;
+      x.units.forEach(function (u) { u.items.forEach(function (it) { known.add(it.id); remain[x.s.id]++; }); });
+    });
+    var done = new Set();
+    // 완료 표시 + 과목별 남은 항목 수 세기
+    function markDone(id) {
+      if (done.has(id)) return;
+      done.add(id);
+      if (known.has(id)) remain[id.split('|')[0]]--;
+    }
+    Object.keys(plan.carry || {}).forEach(function (k) { if (plan.carry[k]) markDone(k); });
+    subs.forEach(function (x) { if (remain[x.s.id] === 0) finish[x.s.id] = 'before'; });
+    var seen = new Set();
     plan.days = plan.days || {};
-    var last = until < plan.end ? until : plan.end;
+    // extend: 종료일 뒤로도 계속 예상 (예상 완료일 계산용)
+    var last = opts.extend ? until : (until < plan.end ? until : plan.end);
     var days = [], closedCount = 0;
 
     for (var d = plan.start; d <= last; d = addDays(d, 1)) {
@@ -296,7 +335,7 @@ var StudyLogic = (function () {
         var sid = x.s.id;
         shown[sid] = frozen
           ? (rec.shown[sid] || []).filter(function (id) { return known.has(id); })
-          : pickItems(x.units, done, quotaFor(plan, x.s, d), x.s.mode);
+          : pickItems(x.units, done, quotaFor(plan, x.s, d, opts.extend), x.s.mode);
       });
 
       if (!frozen && ((opts.autoClose && d < today) || opts.closeDate === d)) {
@@ -307,7 +346,7 @@ var StudyLogic = (function () {
       }
 
       var checked = (rec && rec.checked) || {};
-      Object.keys(checked).forEach(function (id) { if (checked[id]) done.add(id); });
+      Object.keys(checked).forEach(function (id) { if (checked[id]) markDone(id); });
 
       var all = flatten(shown);
       var carried = all.filter(function (id) { return seen.has(id); });
@@ -316,19 +355,57 @@ var StudyLogic = (function () {
       var future = d > today;
       var missed = future ? [] : all.filter(function (id) { return !done.has(id); });
       var status;
-      if (rest) status = 'rest';
+      if (d > plan.end) status = 'after';
+      else if (rest) status = 'rest';
       else if (future) status = 'future';
       else if (!all.length) status = 'empty';
       else if (!closed) status = 'open';
       else status = missed.length ? 'missed' : 'done';
 
-      days.push({ date: d, shown: shown, items: all, missed: missed, carried: carried, status: status, rest: rest, closed: closed });
+      if (!opts.extend || d <= plan.end) {
+        days.push({ date: d, shown: shown, items: all, missed: missed, carried: carried, status: status, rest: rest, closed: closed });
+      }
 
       all.forEach(function (id) { seen.add(id); });
-      // 미래 예상: 앞으로의 날(그리고 예상 계산 중인 오늘)은 계획대로 다 한다고 가정
-      if (future || (d === today && last > today)) all.forEach(function (id) { done.add(id); });
+      // 미래 예상: 앞으로의 날(그리고 아직 마감 안 한 오늘)은 계획대로 다 한다고 가정
+      if (future || (d === today && last > today && !closed)) all.forEach(markDone);
+
+      var allDone = true;
+      subs.forEach(function (x) {
+        var sid = x.s.id;
+        if (remain[sid] === 0) { if (!finish[sid]) finish[sid] = d; }
+        else allDone = false;
+      });
+      if (d === plan.end) {
+        atEnd = {};
+        subs.forEach(function (x) { atEnd[x.s.id] = progress(x.units, done); });
+      }
+      if (opts.extend && allDone && d >= plan.end) break;
     }
-    return { days: days, done: done, subs: subs, closedCount: closedCount };
+    return { days: days, done: done, subs: subs, closedCount: closedCount, finish: finish, atEnd: atEnd };
+  }
+
+  /* ---------- 과목별 예상: 종료일까지 얼마나, 언제 다 끝나는지 ----------
+     반환: [{ s, doneNow, total, byEnd, finishDate, overUnits, overDays, unitLabel }] */
+  function forecast(plan, today) {
+    var actual = simulate(plan, today, today);
+    var from = today > plan.end ? today : plan.end;
+    var f = simulate(plan, today, addDays(from, 1500), { extend: true });
+    return f.subs.map(function (x) {
+      var sid = x.s.id;
+      var now = progress(x.units, actual.done);
+      var byEnd = today > plan.end || !f.atEnd ? now : f.atEnd[sid];
+      var fin = f.finish[sid];
+      if (fin === 'before') fin = plan.start;
+      var r = {
+        s: x.s, total: now.totalUnits, doneNow: now.doneUnits, byEnd: byEnd.doneUnits,
+        finishDate: fin || null, unitLabel: x.s.type === 'table' ? '일차' : (x.s.unitName || '')
+      };
+      r.overUnits = Math.max(0, r.total - r.byEnd);
+      r.overDays = r.finishDate && r.finishDate > plan.end ? diffDays(plan.end, r.finishDate) : 0;
+      r.spareDays = r.finishDate && r.finishDate <= plan.end ? diffDays(r.finishDate, plan.end) : 0;
+      return r;
+    });
   }
 
   /* ---------- 마감 관련 동작 ---------- */
@@ -369,7 +446,7 @@ var StudyLogic = (function () {
     pad: pad, parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, weekday: weekday, diffDays: diffDays,
     itemId: itemId, unitsOf: unitsOf, parseCSV: parseCSV, itemsFor: itemsFor, rowsFromCSV: rowsFromCSV, quotaFor: quotaFor, isRestDay: isRestDay, pickItems: pickItems,
     simulate: simulate, autoClose: autoClose, closeDay: closeDay, reopenDay: reopenDay, setCheck: setCheck,
-    dayOf: dayOf, progress: progress
+    dayOf: dayOf, progress: progress, forecast: forecast
   };
 })();
 if (typeof module !== 'undefined') module.exports = StudyLogic;
@@ -484,9 +561,9 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       h += '<div class="testbar">🧪 테스트 모드 · 오늘을 <input type="date" data-act="testdate" value="' + data.testToday + '"> 로 가정' +
         '<button data-act="nextday">다음 날로 ▶</button></div>';
     }
-    h += '<div class="wrap">' + (ui.tab === 'today' ? renderToday() : renderSettings()) + '</div>';
+    h += '<div class="wrap">' + (ui.tab === 'today' ? renderToday() : ui.tab === 'calendar' ? renderCalendar() : renderSettings()) + '</div>';
     h += '<nav class="tabs">' +
-      tabBtn('today', '📅', '오늘') + tabBtn('settings', '⚙️', '설정') + '</nav>';
+      tabBtn('today', '✅', '오늘') + tabBtn('calendar', '🗓️', '달력') + tabBtn('settings', '⚙️', '설정') + '</nav>';
     if (ui.modal) h += ui.modal();
     app.innerHTML = h;
   }
@@ -594,6 +671,120 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       '<button class="bigbtn ghost" data-act="edit">' + (editing ? '고치기 끝' : '체크 고치기') + '</button>' +
       (d === t ? '<button class="bigbtn ghost" data-act="reopen">마감 취소</button>' : '') + '</div>';
     return h;
+  }
+
+  /* ---------- 달력 / 목록 화면 ---------- */
+  var ICON = { done: '✅', missed: '❌', rest: '💤', open: '✏️', future: '', empty: '－' };
+  function renderCalendar() {
+    var p = plan(), t = today();
+    var sim = L.simulate(p, t, p.end);
+    var byDate = {};
+    sim.days.forEach(function (d) { byDate[d.date] = d; });
+    var sel = ui.calDate || (t < p.start ? p.start : t > p.end ? p.end : t);
+
+    // 과목별 진행 상황
+    var h = '<div class="sec"><h2>📈 과목별 진행 상황</h2><div class="hint">' + korDate(p.start) + ' ~ ' + korDate(p.end) +
+      ' · 앞으로 계획대로 한다고 가정한 예상이에요</div>';
+    L.forecast(p, t).forEach(function (f) {
+      var u = esc(f.unitLabel), pct = f.total ? Math.round(f.doneNow / f.total * 100) : 0;
+      h += '<div class="fc"><b>' + esc(f.s.name) + '</b> <span class="hint">지금 ' + f.doneNow + '/' + f.total + u + ' 완료 (' + pct + '%)</span>' +
+        '<div class="bar"><i style="width:' + pct + '%"></i></div><div class="line">';
+      if (f.doneNow >= f.total && f.total) h += '<span class="ok">🎉 모두 끝냈어요!</span>';
+      else if (!f.finishDate) h += '<span class="bad">하루 분량이 0이라 끝낼 수 없어요</span>';
+      else if (f.overUnits) h += '종료일까지 <b>' + f.byEnd + '/' + f.total + u + '</b> 예정 · <span class="bad">' + f.overUnits + u + ' 초과</span><br>' +
+        '<span class="hint">이대로면 ' + korDate(f.finishDate) + '에 끝나요 (종료일보다 ' + f.overDays + '일 늦음)</span>';
+      else h += '<span class="ok">✅ 종료일 안에 끝낼 수 있어요</span> · 예상 완료 <b>' + korDate(f.finishDate) + '</b>' +
+        (f.spareDays ? ' <span class="hint">(' + f.spareDays + '일 여유)</span>' : '');
+      h += '</div></div>';
+    });
+    h += '</div>';
+
+    // 달력
+    h += '<div class="calwrap"><div>';
+    h += '<div class="legend"><span>✅ 다 함</span><span>❌ 못 한 게 있음</span><span>💤 쉬는 날</span><span>✏️ 오늘(진행 중)</span><span>빈칸: 아직 안 옴</span></div>';
+    var m = p.start.slice(0, 7);
+    while (m <= p.end.slice(0, 7)) {
+      var first = m + '-01', wd = L.weekday(first);
+      h += '<div class="month"><h3>' + (+m.slice(0, 4)) + '년 ' + (+m.slice(5)) + '월</h3><div class="cal">';
+      '일월화수목금토'.split('').forEach(function (c) { h += '<div class="wd">' + c + '</div>'; });
+      for (var i = 0; i < wd; i++) h += '<div></div>';
+      for (var d = first; d.slice(0, 7) === m; d = L.addDays(d, 1)) {
+        var day = byDate[d], n = +d.slice(8);
+        if (!day) { h += '<div class="cell out"><span class="n">' + n + '</span></div>'; continue; }
+        h += '<button class="cell s-' + day.status + (d === t ? ' today' : '') + (d === sel ? ' sel' : '') + '" data-act="calpick" data-date="' + d + '">' +
+          '<span class="n">' + n + '</span><span class="i">' + (ICON[day.status] || '') + '</span></button>';
+      }
+      h += '</div></div>';
+      var y = +m.slice(0, 4), mo = +m.slice(5) + 1;
+      if (mo > 12) { mo = 1; y++; }
+      m = y + '-' + L.pad(mo);
+    }
+    h += '</div>' + (wide() ? '<div class="calside">' + renderDayDetail(p, t, sim, byDate[sel]) + '</div>' : '') + '</div>';
+    return h;
+  }
+
+  function wide() { return window.matchMedia('(orientation:landscape) and (min-width:900px)').matches; }
+  // 세로 화면: 날짜를 누르면 팝업으로 보여주기
+  function dayModal() {
+    var p = plan(), t = today();
+    var sim = L.simulate(p, t, p.end);
+    var day = sim.days.filter(function (d) { return d.date === ui.calDate; })[0];
+    return '<div class="modal" data-act="closemodal"><div style="width:100%;max-width:640px" data-stop="1">' + withClose(renderDayDetail(p, t, sim, day)) + '</div></div>';
+  }
+
+  function withClose(html) {
+    var row = '<div class="btnrow" style="justify-content:flex-start">', close = '<button class="btn" data-act="closemodal">닫기</button>';
+    if (html.indexOf(row) >= 0) return html.replace(row, row + close);
+    return html.replace(/<\/div>$/, row + close + '</div></div>');
+  }
+  // 묶음별로 모아서 "5강: 강의 듣기, 복습" 처럼
+  function groupLines(x, ids) {
+    var order = [], by = {};
+    ids.forEach(function (id) {
+      var q = id.split('|'), u = +q[1];
+      if (!by[u]) { by[u] = []; order.push(u); }
+      by[u].push(x.units[u].items[+q[2]].label);
+    });
+    return order.map(function (u) {
+      var unit = x.units[u], labels = by[u];
+      var same = labels.length === 1 && labels[0] === unit.title;
+      return esc(unit.title) + (unit.sub ? ' <span class="hint">' + esc(unit.sub) + '</span>' : '') + (same ? '' : ' — ' + esc(labels.join(', ')));
+    });
+  }
+
+  function renderDayDetail(p, t, sim, day) {
+    if (!day) return '';
+    var st = STATUS[day.status] || ['b-empty', ''];
+    var rec = p.days[day.date] || {};
+    var h = '<div class="sec detail"><h3>' + korDate(day.date) + '</h3><span class="badge ' + st[0] + '">' + st[1] + '</span>';
+    if (day.status === 'rest') h += '<p class="hint">쉬는 날에는 할 일이 없고 진도도 멈춰요.</p>';
+    var future = day.status === 'future' || (day.rest && day.date > t);
+    if (future && !day.rest) h += '<p class="hint">지금 진도를 기준으로, 그때까지 계획대로 했을 때의 예상 할 일이에요.</p>';
+    var doneSet = day.date >= t ? null : L.simulate(p, t, day.date).done;
+    sim.subs.forEach(function (x) {
+      var ids = day.shown[x.s.id] || [];
+      if (!ids.length) return;
+      h += '<div class="dsub"><h4>' + esc(x.s.name) + '</h4><ul>';
+      if (future || day.date === t) {
+        var todayDone = day.date === t ? (rec.checked || {}) : {};
+        var mk = function (id) { return todayDone[id] ? '✅ ' : (future ? '• ' : '⬜ '); };
+        var lines = [];
+        ids.forEach(function (id) { lines.push(mk(id) + groupLines(x, [id])[0]); });
+        h += future ? groupLines(x, ids).map(function (l) { return '<li>• ' + l + '</li>'; }).join('') : lines.map(function (l) { return '<li>' + l + '</li>'; }).join('');
+      } else {
+        var did = ids.filter(function (id) { return doneSet.has(id); });
+        var miss = ids.filter(function (id) { return !doneSet.has(id); });
+        if (did.length) h += groupLines(x, did).map(function (l) { return '<li><span class="ok">✓</span> ' + l + '</li>'; }).join('');
+        if (miss.length) h += groupLines(x, miss).map(function (l) { return '<li><span class="bad">✗</span> ' + l + '</li>'; }).join('');
+      }
+      h += '</ul></div>';
+    });
+    if (!day.items.length && !day.rest) h += '<p class="hint">이 날은 할 일이 없어요.</p>';
+    if (rec.memo) h += '<div class="memo">📝 ' + esc(rec.memo) + '</div>';
+    if (day.date <= t) h += '<div class="btnrow" style="justify-content:flex-start"><button class="btn pri" data-act="opendate" data-date="' + day.date + '">' +
+      (day.date === t ? '오늘 화면에서 체크하기' : '이 날 열기 (메모·체크 고치기)') + '</button></div>';
+    else if (!day.rest) h += '<div class="btnrow" style="justify-content:flex-start"><button class="btn" data-act="opendate" data-date="' + day.date + '">크게 보기</button></div>';
+    return h + '</div>';
   }
 
   function describe(subs, id) {
@@ -724,7 +915,16 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     var act = b.getAttribute('data-act'), p = plan(), t = today();
     var d = ui.viewDate || t;
     switch (act) {
-      case 'tab': ui.tab = b.getAttribute('data-tab'); ui.editDate = null; break;
+      case 'tab': ui.tab = b.getAttribute('data-tab'); ui.editDate = null; if (ui.tab !== 'today') ui.viewDate = null; window.scrollTo(0, 0); break;
+      case 'calpick': {
+        ui.calDate = b.getAttribute('data-date');
+        if (!wide()) ui.modal = dayModal;
+        break;
+      }
+      case 'closemodal':
+        if (e.target.closest('[data-stop]') && !e.target.closest('button')) return; // 팝업 안쪽 빈 곳을 누른 경우
+        ui.modal = null; break;
+      case 'opendate': ui.modal = null; ui.viewDate = b.getAttribute('data-date'); if (ui.viewDate === t) ui.viewDate = null; ui.tab = 'today'; window.scrollTo(0, 0); break;
       case 'prev': ui.viewDate = L.addDays(d, -1); ui.editDate = null; break;
       case 'next': ui.viewDate = L.addDays(d, 1); ui.editDate = null; break;
       case 'gotoday': ui.viewDate = null; ui.editDate = null; break;
@@ -834,6 +1034,14 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   function checkDateChange() { if (ui.lastToday !== today()) { runAutoClose(); ui.viewDate = null; render(); } }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) checkDateChange(); });
   setInterval(checkDateChange, 60000);
+  // 화면을 돌리면 달력 배치 다시 그리기
+  var lastWide = wide();
+  window.addEventListener('resize', function () {
+    if (wide() === lastWide) return;
+    lastWide = wide();
+    if (ui.modal === dayModal) ui.modal = null;
+    if (ui.tab === 'calendar') render();
+  });
 
   load(); runAutoClose(); render();
 })();
