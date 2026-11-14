@@ -287,6 +287,38 @@ test('(새 계획) 진도 이어받기 / 처음부터', function () {
   eq(np2.subjects.length, 0, '안 가져간 과목은 빠짐');
 });
 
+test('(계획 바꾸기) 다른 계획을 쓰는 동안은 일시정지, 돌아오면 멈춘 곳부터', function () {
+  var win = makePlan([subj('kor', 40, 2)]);
+  var sem = makePlan([subj('eng', 30, 1)]); sem.id = 'sem';
+  checkAll(win, D1, D1); L.closeDay(win, D1, D1);             // 겨울 계획 D1: 1·2강
+  L.switchPlan(win, sem, D2);                                 // D2에 학기 계획으로
+  checkAll(sem, D2, D2); L.closeDay(sem, D2, D2);
+  L.switchPlan(sem, win, D5);                                 // D5에 다시 겨울 계획으로
+  L.autoClose(win, D5);
+  [D2, D3, D4].forEach(function (d) { eq(L.dayOf(win, D5, d).status, 'paused', d + ' 일시정지'); });
+  eq(unitsShown(win, D5, D5, 'kor'), [3, 4], '멈춘 곳부터 이어짐');
+  eq([L.stats(win, D5).days, L.stats(win, D5).streak], [1, 1], '통계에서 일시정지 날은 빠짐');
+  eq(unitsShown(sem, D5, D5, 'eng') === undefined, false);
+  eq(L.isPaused(sem, D5), true, '학기 계획은 이제 일시정지');
+});
+
+test('(계획 바꾸기) 같은 날 바꿨다가 돌아오면 일시정지 기록이 남지 않음', function () {
+  var a = makePlan([subj('kor', 40, 2)]), b = makePlan([subj('eng', 30, 1)]);
+  L.switchPlan(a, b, D2); L.switchPlan(b, a, D2);
+  eq(a.pauses, [], 'a');
+  eq(b.pauses.length, 1, 'b는 다시 정지 중');
+});
+
+test('(새 계획) 학기용: 평일·주말 분량을 따로 정해서 만들기', function () {
+  var old = makePlan([subj('kor', 40, 2)]);
+  var np = L.newPlanFrom(old, D1, { id: 'n', name: '1학기', start: D1, end: '2027-07-20',
+    subjects: [{ id: 'kor', keep: true, carry: false, wk: 0, we: 3 }] });
+  var sid = np.subjects[0].id;
+  eq(L.quotaFor(np, np.subjects[0], '2026-12-21'), 0, '월요일 0');
+  eq(L.quotaFor(np, np.subjects[0], '2026-12-26'), 3, '토요일 3');
+  eq(unitsShown(np, D1, D1, sid), [1, 2, 3], '12/20(일)은 3강');
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);

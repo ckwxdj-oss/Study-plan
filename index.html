@@ -127,7 +127,7 @@ button{cursor:pointer;touch-action:manipulation}
 .cell .n{font-size:16px} .cell .i{font-size:20px;line-height:1}
 .cell.out{background:transparent;box-shadow:none;color:var(--line);cursor:default}
 .cell.s-done{background:var(--green-soft)} .cell.s-missed{background:var(--red-soft)}
-.cell.s-rest{background:var(--orange-soft)} .cell.s-open{background:var(--accent-soft)}
+.cell.s-rest{background:var(--orange-soft)} .cell.s-paused{background:var(--gray-soft);color:var(--sub)} .cell.s-open{background:var(--accent-soft)}
 .cell.today{border-color:var(--accent)}
 .cell.sel{border-color:var(--text)}
 .legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:15px;color:var(--sub);margin:4px 0 14px}
@@ -168,8 +168,12 @@ button{cursor:pointer;touch-action:manipulation}
 .srow .top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .srow .top b{font-size:18px}
 .srow .bar{margin:8px 0 4px}
-.archbar{background:var(--accent-soft);color:var(--accent);border-radius:14px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-weight:700}
-.archbar span{flex:1;min-width:200px}
+.planbar{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:6px}
+.planbar button{flex:none;min-height:48px;padding:6px 18px;border-radius:99px;border:2px solid var(--line);background:var(--card);font-weight:700;color:var(--sub)}
+.planbar button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.npq{display:flex;gap:10px;align-items:center;flex-wrap:wrap;width:100%;padding:4px 0 2px}
+.npq label{display:flex;align-items:center;gap:6px;font-weight:700;font-size:15px}
+.npq input{width:84px;min-height:50px;text-align:center;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
 .pick{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .pick .wkb{padding:0 16px}
 
@@ -314,9 +318,13 @@ var StudyLogic = (function () {
     }
     return null;
   }
+  // 일시정지: 다른 계획을 쓰는 동안 (pauses = [{from, to}], to 가 null 이면 아직 정지 중)
+  function isPaused(plan, date) {
+    return (plan.pauses || []).some(function (q) { return date >= q.from && (!q.to || date <= q.to); });
+  }
   function quotaFor(plan, s, date, ignoreEnd) {
     if (date < plan.start || (date > plan.end && !ignoreEnd)) return 0;
-    if (isRestDay(plan, date)) return 0;
+    if (isRestDay(plan, date) || isPaused(plan, date)) return 0;
     var per = periodFor(s, date, ignoreEnd && date > plan.end);
     var n = per ? per.days[weekday(date)] : s.daily;
     return Math.max(0, n | 0);
@@ -400,11 +408,13 @@ var StudyLogic = (function () {
       var carried = all.filter(function (id) { return seen.has(id); });
       // 마감한 날은 마감할 때의 쉬는 날 여부를 그대로 씀 (나중에 쉬는 날 설정을 바꿔도 지난 기록은 그대로)
       var rest = frozen ? !!rec.rest : isRestDay(plan, d);
+      var paused = isPaused(plan, d);
       var closed = !!(rec && rec.closed);
       var future = d > today;
       var missed = future ? [] : all.filter(function (id) { return !done.has(id); });
       var status;
       if (d > plan.end) status = 'after';
+      else if (paused) status = 'paused';
       else if (rest) status = 'rest';
       else if (future) status = 'future';
       else if (!all.length) status = 'empty';
@@ -412,7 +422,7 @@ var StudyLogic = (function () {
       else status = missed.length ? 'missed' : 'done';
 
       if (!opts.extend || d <= plan.end) {
-        days.push({ date: d, shown: shown, items: all, missed: missed, carried: carried, status: status, rest: rest, closed: closed });
+        days.push({ date: d, shown: shown, items: all, missed: missed, carried: carried, status: status, rest: rest, paused: paused, closed: closed });
       }
 
       all.forEach(function (id) { seen.add(id); });
@@ -498,16 +508,20 @@ var StudyLogic = (function () {
   }
 
   /* ---------- 새 계획 만들기 ----------
-     cfg = { id, name, start, end, subjects:[{ id, keep:true/false, carry:true/false }] }
+     cfg = { id, name, start, end, subjects:[{ id, keep, carry, wk(평일 분량), we(주말 분량) }] }
      carry(이어받기)한 과목은 같은 과목 id를 써서, 지난 계획에서 끝낸 항목을 '이미 완료'로 시작 */
   function newPlanFrom(old, today, cfg) {
     var done = simulate(old, today, today).done;
-    var plan = { id: cfg.id, name: cfg.name, start: cfg.start, end: cfg.end, restDays: [], restWeekdays: (old.restWeekdays || []).slice(), days: {}, carry: {}, subjects: [] };
+    var plan = { id: cfg.id, name: cfg.name, start: cfg.start, end: cfg.end, restDays: [], restWeekdays: (old.restWeekdays || []).slice(), pauses: [], days: {}, carry: {}, subjects: [] };
     old.subjects.forEach(function (s) {
       var c = (cfg.subjects || []).filter(function (x) { return x.id === s.id; })[0];
       if (!c || !c.keep) return;
       var copy = JSON.parse(JSON.stringify(s));
       delete copy.periods; // 기간 규칙은 지난 계획 날짜 기준이라 새 계획에서는 다시 정함
+      if (c.wk != null && c.we != null) {
+        if (c.wk === c.we) copy.daily = c.wk;
+        else copy.periods = [{ from: cfg.start, to: cfg.end, days: [c.we, c.wk, c.wk, c.wk, c.wk, c.wk, c.we] }];
+      }
       if (c.carry) {
         done.forEach(function (id) { if (id.split('|')[0] === s.id) plan.carry[id] = true; });
       } else {
@@ -516,6 +530,20 @@ var StudyLogic = (function () {
       plan.subjects.push(copy);
     });
     return plan;
+  }
+
+  /* ---------- 계획 바꾸기 ----------
+     from 계획은 오늘부터 일시정지, to 계획은 일시정지를 어제까지로 끝냄 (오늘부터 다시 진행) */
+  function switchPlan(from, to, today) {
+    if (from && from !== to) {
+      autoClose(from, today);
+      from.pauses = (from.pauses || []).filter(function (q) { return q.to; });
+      from.pauses.push({ from: today, to: null });
+    }
+    to.pauses = (to.pauses || []).map(function (q) {
+      if (q.to) return q;
+      return q.from >= today ? null : { from: q.from, to: addDays(today, -1) };
+    }).filter(Boolean);
   }
 
   /* ---------- 마감 관련 동작 ---------- */
@@ -554,7 +582,7 @@ var StudyLogic = (function () {
 
   return {
     pad: pad, parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, weekday: weekday, diffDays: diffDays,
-    itemId: itemId, unitsOf: unitsOf, parseCSV: parseCSV, itemsFor: itemsFor, rowsFromCSV: rowsFromCSV, quotaFor: quotaFor, periodFor: periodFor, isRestDay: isRestDay, pickItems: pickItems,
+    itemId: itemId, unitsOf: unitsOf, parseCSV: parseCSV, itemsFor: itemsFor, rowsFromCSV: rowsFromCSV, quotaFor: quotaFor, periodFor: periodFor, isRestDay: isRestDay, isPaused: isPaused, switchPlan: switchPlan, pickItems: pickItems,
     simulate: simulate, autoClose: autoClose, closeDay: closeDay, reopenDay: reopenDay, setCheck: setCheck,
     dayOf: dayOf, progress: progress, forecast: forecast, stats: stats, newPlanFrom: newPlanFrom
   };
@@ -581,17 +609,6 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   function today() { return testMode ? data.testToday : realToday(); }
   function korDate(s) { var p = s.split('-'); return (+p[1]) + '월 ' + (+p[2]) + '일 (' + '일월화수목금토'[L.weekday(s)] + ')'; }
   function plan() { return data.plans.filter(function (p) { return p.id === data.activePlanId; })[0]; }
-  function vplan() { // 달력·통계에서 보고 있는 계획 (지난 계획 보기 중이면 그 계획)
-    var a = ui.archiveId && data.plans.filter(function (p) { return p.id === ui.archiveId; })[0];
-    return a || plan();
-  }
-  function vtoday() { var p = vplan(); return p.archivedAt ? p.archivedAt : today(); }
-  function archBanner() {
-    var p = vplan();
-    if (!p.archivedAt) return '';
-    return '<div class="archbar"><span>📁 지난 계획 「' + esc(p.name) + '」 기록을 보는 중이에요 (' + korDate(p.start) + ' ~ ' + korDate(p.end) + ')</span>' +
-      '<button class="btn" data-act="archclose">현재 계획으로 돌아가기</button></div>';
-  }
   function toast(msg) {
     document.querySelectorAll('.toast').forEach(function (x) { x.remove(); });
     var t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
@@ -662,6 +679,12 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       });
       data.addedMath = true; save();
     }
+    data.plans.forEach(function (p) {
+      if (p.archivedAt) {
+        p.pauses = (p.pauses || []).concat([{ from: p.archivedAt, to: null }]);
+        delete p.archivedAt; save();
+      }
+    });
     ensureRows();
   }
   function save() { localStorage.setItem(testMode ? TKEY : KEY, JSON.stringify(data)); }
@@ -694,13 +717,20 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
 
   var STATUS = {
     done: ['b-done', '✅ 다 했어요'], missed: ['b-missed', '❌ 못 한 게 있어요'], open: ['b-open', '✏️ 진행 중'],
-    future: ['b-future', '⏳ 아직 안 온 날 (예상)'], rest: ['b-rest', '💤 쉬는 날'], empty: ['b-empty', '할 일 없음']
+    future: ['b-future', '⏳ 아직 안 온 날 (예상)'], rest: ['b-rest', '💤 쉬는 날'], empty: ['b-empty', '할 일 없음'],
+    paused: ['b-empty', '⏸️ 다른 계획을 쓰던 날 (일시정지)']
   };
 
   function renderToday() {
     var p = plan(), t = today();
     var d = ui.viewDate || t;
-    var h = '<div class="datehead"><button class="navbtn" data-act="prev" aria-label="이전 날">‹</button>' +
+    var h = '';
+    if (data.plans.length > 1) {
+      h += '<div class="planbar">' + data.plans.map(function (x) {
+        return '<button class="' + (x.id === p.id ? 'on' : '') + '" data-act="useplan" data-id="' + x.id + '">' + (x.id === p.id ? '✅ ' : '') + esc(x.name) + '</button>';
+      }).join('') + '</div>';
+    }
+    h += '<div class="datehead"><button class="navbtn" data-act="prev" aria-label="이전 날">‹</button>' +
       '<h1>' + korDate(d) + '<span class="sub">' + (d === t ? '오늘' : (d < t ? L.diffDays(d, t) + '일 전' : L.diffDays(t, d) + '일 후')) + ' · ' + esc(p.name) + '</span></h1>' +
       '<button class="navbtn" data-act="next" aria-label="다음 날">›</button></div>';
     if (d !== t) h += '<button class="todaybtn" data-act="gotoday">오늘로 돌아가기</button>';
@@ -795,16 +825,16 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   }
 
   /* ---------- 달력 / 목록 화면 ---------- */
-  var ICON = { done: '✅', missed: '❌', rest: '💤', open: '✏️', future: '', empty: '－' };
+  var ICON = { done: '✅', missed: '❌', rest: '💤', open: '✏️', future: '', empty: '－', paused: '⏸️' };
   function renderCalendar() {
-    var p = vplan(), t = vtoday();
+    var p = plan(), t = today();
     var sim = L.simulate(p, t, p.end);
     var byDate = {};
     sim.days.forEach(function (d) { byDate[d.date] = d; });
     var sel = ui.calDate || (t < p.start ? p.start : t > p.end ? p.end : t);
 
     // 과목별 진행 상황
-    var h = archBanner() + '<div class="sec"><h2>📈 과목별 진행 상황</h2><div class="hint">' + korDate(p.start) + ' ~ ' + korDate(p.end) +
+    var h = '<div class="sec"><h2>📈 과목별 진행 상황</h2><div class="hint">' + korDate(p.start) + ' ~ ' + korDate(p.end) +
       ' · 앞으로 계획대로 한다고 가정한 예상이에요</div>';
     L.forecast(p, t).forEach(function (f) {
       var u = esc(f.unitLabel), pct = f.total ? Math.round(f.doneNow / f.total * 100) : 0;
@@ -822,7 +852,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
 
     // 달력
     h += '<div class="calwrap"><div>';
-    h += '<div class="legend"><span>✅ 다 함</span><span>❌ 못 한 게 있음</span><span>💤 쉬는 날</span><span>✏️ 오늘(진행 중)</span><span>빈칸: 아직 안 옴</span></div>';
+    h += '<div class="legend"><span>✅ 다 함</span><span>❌ 못 한 게 있음</span><span>💤 쉬는 날</span><span>✏️ 오늘(진행 중)</span><span>⏸️ 일시정지</span><span>빈칸: 아직 안 옴</span></div>';
     var m = p.start.slice(0, 7);
     while (m <= p.end.slice(0, 7)) {
       var first = m + '-01', wd = L.weekday(first);
@@ -847,8 +877,8 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   /* ---------- 통계 화면 ---------- */
   function pct(x) { return x == null ? '—' : Math.round(x * 100) + '%'; }
   function renderStats() {
-    var p = vplan(), t = vtoday(), st = L.stats(p, t);
-    var h = archBanner();
+    var p = plan(), t = today(), st = L.stats(p, t);
+    var h = '';
     if (!st.days) h += '<div class="notice">아직 마감한 날이 없어요. 하루를 마감하면 통계가 쌓여요.</div>';
     h += '<div class="tiles">' +
       '<div class="tile"><div class="k">전체 달성률</div><div class="v">' + pct(st.rate) + '</div><div class="d">해낸 항목 ' + st.doneItems + ' / ' + st.items + '개</div></div>' +
@@ -869,7 +899,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     order.forEach(function (q) {
       h += '<div class="srow"><div class="top"><b>' + esc(q.s.name) + '</b><span>밀린 날 <b>' + q.missedDays + '일</b></span></div>' +
         '<div class="bar"><i style="width:' + Math.round(q.missedDays / max * 100) + '%;background:var(--orange)"></i></div>' +
-        '<div class="hint">못 한 항목 누적 ' + q.missedItems + '개' + (p.archivedAt ? '' : ' · 지금 밀려 있는 항목 ' + q.backlog + '개') + '</div></div>';
+        '<div class="hint">못 한 항목 누적 ' + q.missedItems + '개' + ' · 지금 밀려 있는 항목 ' + q.backlog + '개' + '</div></div>';
     });
     return h + '</div>';
   }
@@ -877,7 +907,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   function wide() { return window.matchMedia('(orientation:landscape) and (min-width:900px)').matches; }
   // 세로 화면: 날짜를 누르면 팝업으로 보여주기
   function dayModal() {
-    var p = vplan(), t = vtoday();
+    var p = plan(), t = today();
     var sim = L.simulate(p, t, p.end);
     var day = sim.days.filter(function (d) { return d.date === ui.calDate; })[0];
     return '<div class="modal" data-act="closemodal"><div style="width:100%;max-width:640px" data-stop="1">' + withClose(renderDayDetail(p, t, sim, day)) + '</div></div>';
@@ -933,7 +963,6 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     if (!day.items.length && !day.rest) h += '<p class="hint">이 날은 할 일이 없어요.</p>';
     if (rec.memo) h += '<div class="memo">📝 ' + esc(rec.memo) + '</div>';
     var restBtn = '';
-    if (p.archivedAt) return h + '</div>'; // 지난 계획은 보기만
     if (day.date >= t && !day.closed) {
       var listed = (p.restDays || []).indexOf(day.date) >= 0;
       if (listed) restBtn = '<button class="btn" data-act="togglerest" data-date="' + day.date + '">쉬는 날 해제</button>';
@@ -962,32 +991,20 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   function renderSettings() {
     var p = plan();
     var h = '';
-    h += '<div class="sec"><h2>📆 계획 기간</h2>' +
+    h += '<div class="sec"><h2>📆 지금 계획 「' + esc(p.name) + '」 기간</h2>' +
       '<label class="field"><span>계획 이름</span><input id="pName" value="' + esc(p.name) + '"></label>' +
       '<div class="grid2"><label class="field"><span>시작일</span><input type="date" id="pStart" value="' + p.start + '"></label>' +
       '<label class="field"><span>종료일</span><input type="date" id="pEnd" value="' + p.end + '"></label></div>' +
       '<button class="btn pri" data-act="saveplan">기간 저장</button></div>';
 
-    var past = data.plans.filter(function (x) { return x.archivedAt; });
     h += '<div class="sec"><h2>🗂️ 계획 관리</h2>' +
-      '<p class="hint" style="margin-top:0">계획 기간이 끝나면 「새 계획 시작」으로 다음 1~2달 계획을 만들어요. 지금 계획은 기록으로 보관돼요.</p>' +
-      '<button class="btn pri" data-act="newplan">＋ 새 계획 시작</button>';
-    if (past.length) {
-      h += '<div class="field" style="margin-top:16px"><span>지난 계획</span>';
-      past.slice().reverse().forEach(function (x) {
-        h += '<div class="subrow"><div class="nm"><b>' + esc(x.name) + '</b><small>' + korDate(x.start) + ' ~ ' + korDate(x.end) + ' · 과목 ' + x.subjects.length + '개</small></div>' +
-          '<button class="btn" data-act="archview" data-id="' + x.id + '">기록 보기</button>' +
-          '<button class="btn red" data-act="archdel" data-id="' + x.id + '">삭제</button></div>';
-      });
-      h += '</div>';
-    }
-    h += '</div>';
-
-    h += '<div class="sec"><h2>💾 백업</h2>' +
-      '<p class="hint" style="margin-top:0">기록은 이 탭의 크롬 안에만 저장돼요. 가끔 백업 파일로 내보내 두면, 기기를 바꾸거나 크롬 데이터가 지워져도 되살릴 수 있어요.' +
-      (testMode ? ' <b>지금은 테스트 모드 데이터가 대상이에요.</b>' : '') + '</p>' +
-      '<div class="btnrow" style="justify-content:flex-start"><button class="btn pri" data-act="export">⬇️ JSON 파일로 내보내기</button>' +
-      '<label class="btn" style="display:inline-flex;align-items:center">⬆️ 백업 파일 불러오기<input type="file" accept=".json,application/json" data-act="importfile" hidden></label></div></div>';
+      '<p class="hint" style="margin-top:0">방학용, 학기용처럼 계획을 여러 개 만들어 두고 골라 쓸 수 있어요. 고르지 않은 계획은 <b>일시정지</b>돼서 진도가 그대로 멈춰 있고, 다시 고르면 멈춘 곳부터 이어져요.</p>';
+    data.plans.forEach(function (x) {
+      var on = x.id === data.activePlanId;
+      h += '<div class="subrow"><div class="nm"><b>' + (on ? '✅ ' : '⏸️ ') + esc(x.name) + '</b><small>' + korDate(x.start) + ' ~ ' + korDate(x.end) + ' · 과목 ' + x.subjects.length + '개 · ' + (on ? '지금 사용 중' : '일시정지') + '</small></div>' +
+        (on ? '' : '<button class="btn pri" data-act="useplan" data-id="' + x.id + '">이 계획 쓰기</button><button class="btn red" data-act="delplan" data-id="' + x.id + '">삭제</button>') + '</div>';
+    });
+    h += '<div class="btnrow" style="justify-content:flex-start"><button class="btn pri" data-act="newplan">＋ 새 계획 만들기</button></div></div>';
 
     h += '<div class="sec"><h2>📚 과목</h2>';
     p.subjects.forEach(function (s) {
@@ -1066,24 +1083,31 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   var np = null;
   function openNewPlan() {
     var p = plan(), t = today();
-    np = { name: '', start: t, end: L.addDays(t, 59), subs: p.subjects.map(function (s) { return { id: s.id, name: s.name, keep: true, carry: true }; }) };
+    np = { name: '', start: t, end: L.addDays(t, 59), subs: p.subjects.map(function (s) {
+      var u = s.type === 'table' ? '일차' : (s.unitName || '');
+      return { id: s.id, name: s.name, unit: u, keep: true, carry: true, wk: s.daily, we: s.daily };
+    }) };
     ui.modal = newPlanModal; render();
   }
   function newPlanModal() {
-    var h = '<div class="modal"><div class="sec"><h2>새 계획 시작</h2>' +
-      '<label class="field"><span>계획 이름</span><input id="npName" value="' + esc(np.name) + '" placeholder="예: 3~4월 계획"></label>' +
+    var h = '<div class="modal"><div class="sec"><h2>새 계획 만들기</h2>' +
+      '<label class="field"><span>계획 이름</span><input id="npName" value="' + esc(np.name) + '" placeholder="예: 1학기 계획, 여름방학 계획"></label>' +
       '<div class="grid2"><label class="field"><span>시작일</span><input type="date" id="npStart" value="' + np.start + '"></label>' +
       '<label class="field"><span>종료일</span><input type="date" id="npEnd" value="' + np.end + '"></label></div>' +
-      '<div class="field"><span>지금 과목을 어떻게 할까요?</span>';
+      '<div class="field"><span>지금 계획의 과목을 어떻게 할까요?</span>';
     np.subs.forEach(function (x, i) {
       h += '<div class="subrow"><div class="nm"><b>' + esc(x.name) + '</b></div><div class="pick">' +
         '<button class="wkb ' + (!x.keep ? 'on' : '') + '" data-act="npset" data-i="' + i + '" data-v="drop">빼기</button>' +
         '<button class="wkb ' + (x.keep && !x.carry ? 'on' : '') + '" data-act="npset" data-i="' + i + '" data-v="fresh">처음부터</button>' +
-        '<button class="wkb ' + (x.keep && x.carry ? 'on' : '') + '" data-act="npset" data-i="' + i + '" data-v="carry">진도 이어받기</button></div></div>';
+        '<button class="wkb ' + (x.keep && x.carry ? 'on' : '') + '" data-act="npset" data-i="' + i + '" data-v="carry">진도 이어받기</button></div>';
+      if (x.keep) h += '<div class="npq"><span class="hint">하루 분량</span>' +
+        '<label>평일 <input type="number" inputmode="numeric" min="0" data-npwk="' + i + '" value="' + x.wk + '">' + esc(x.unit) + '</label>' +
+        '<label>토·일 <input type="number" inputmode="numeric" min="0" data-npwe="' + i + '" value="' + x.we + '">' + esc(x.unit) + '</label></div>';
+      h += '</div>';
     });
-    h += '<p class="hint">「진도 이어받기」는 같은 인강·교재를 계속할 때 골라요. 지금까지 끝낸 강·일차는 완료된 상태로 시작해요. ' +
-      '기간·요일별 분량 규칙은 날짜가 바뀌니 새 계획에서 다시 정해 주세요. 과목 추가나 CSV 불러오기는 새 계획을 만든 뒤 설정에서 할 수 있어요.</p></div>' +
-      '<div class="notice warn">지금 계획 「' + esc(plan().name) + '」은 어제까지의 기록으로 보관돼요 (오늘 한 체크는 「진도 이어받기」 과목에 반영돼요). 언제든 「지난 계획 → 기록 보기」로 볼 수 있어요.</div>' +
+    h += '<p class="hint">학기 중에는 평일 분량을 줄이거나 0으로 하고, 주말에 몰아서 하게 정할 수 있어요. 기간을 나누는 자세한 분량은 만든 뒤 과목 「수정」에서 바꿀 수 있어요.<br>' +
+      '「진도 이어받기」는 같은 인강·교재를 계속할 때 골라요. 지금까지 끝낸 강·일차는 완료된 상태로 시작해요.</p></div>' +
+      '<div class="notice warn">만들면 새 계획으로 바로 바뀌고, 지금 계획 「' + esc(plan().name) + '」은 오늘부터 일시정지돼요. 설정 → 계획 관리에서 언제든 다시 고를 수 있어요.</div>' +
       '<div class="btnrow"><button class="bigbtn ghost" data-act="cancelsub">취소</button><button class="bigbtn" data-act="npsave">새 계획 만들기</button></div></div></div>';
     return h;
   }
@@ -1091,29 +1115,11 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     np.name = document.getElementById('npName').value;
     np.start = document.getElementById('npStart').value;
     np.end = document.getElementById('npEnd').value;
-  }
-
-  /* ---------- 백업 ---------- */
-  function exportJSON() {
-    var payload = { app: 'study-plan-check', version: 1, exportedAt: new Date().toISOString(), testMode: testMode, data: data };
-    var blob = new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'study-plan-backup_' + realToday() + (testMode ? '_test' : '') + '.json';
-    document.body.appendChild(a); a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-    toast('백업 파일을 내보냈어요 (다운로드 폴더)');
-  }
-  function importJSON(text) {
-    var obj;
-    try { obj = JSON.parse(text); } catch (e) { toast('JSON 파일을 읽지 못했어요'); return; }
-    var d = obj && obj.data ? obj.data : obj;
-    if (!d || !Array.isArray(d.plans) || !d.plans.length || !d.activePlanId) { toast('이 앱의 백업 파일이 아니에요'); return; }
-    if (!confirm('현재 데이터를 덮어씁니다.\n지금 기록은 모두 백업 파일 내용으로 바뀌어요. 계속할까요?')) return;
-    if (testMode && !d.testToday) d.testToday = data.testToday;
-    data = d; data.addedMath = true; save();
-    ui.viewDate = null; ui.editDate = null; ui.archiveId = null; ui.modal = null;
-    ensureRows(); runAutoClose(); render(); toast('백업 파일을 불러왔어요');
+    np.subs.forEach(function (x, i) {
+      var a = document.querySelector('[data-npwk="' + i + '"]'), b = document.querySelector('[data-npwe="' + i + '"]');
+      if (a) { var n = parseInt(a.value, 10); x.wk = isNaN(n) ? 0 : Math.max(0, n); }
+      if (b) { var m = parseInt(b.value, 10); x.we = isNaN(m) ? 0 : Math.max(0, m); }
+    });
   }
 
   /* ---------- 기간·요일별 분량 편집 (두 종류 과목 공용) ---------- */
@@ -1232,7 +1238,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       case 'testmode': {
         testMode = !testMode;
         localStorage.setItem(MODEKEY, testMode ? '1' : '0');
-        load(); ui.viewDate = null; ui.editDate = null; ui.archiveId = null; runAutoClose(true);
+        load(); ui.viewDate = null; ui.editDate = null; runAutoClose(true);
         toast(testMode ? '테스트 모드를 켰어요' : '테스트 모드를 껐어요. 실제 데이터로 돌아왔어요'); break;
       }
       case 'testreset':
@@ -1240,7 +1246,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         localStorage.removeItem(TKEY); load(); runAutoClose(true); break;
       case 'resetall':
         if (!confirm('정말 ' + (testMode ? '테스트' : '실제') + ' 데이터를 모두 지울까요? 되돌릴 수 없어요.')) return;
-        localStorage.removeItem(testMode ? TKEY : KEY); load(); ui.viewDate = null; ui.archiveId = null; break;
+        localStorage.removeItem(testMode ? TKEY : KEY); load(); ui.viewDate = null; break;
       case 'saveplan': {
         var nm = document.getElementById('pName').value.trim() || '공부 계획';
         var st = document.getElementById('pStart').value, en = document.getElementById('pEnd').value;
@@ -1305,12 +1311,18 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         else { p.restDays.push(td); p.restDays.sort(); }
         save(); if (ui.modal === dayModal) ui.modal = dayModal; break;
       }
-      case 'archclose': ui.archiveId = null; ui.calDate = null; break;
-      case 'archview': ui.archiveId = b.getAttribute('data-id'); ui.calDate = null; ui.tab = 'calendar'; window.scrollTo(0, 0); break;
-      case 'archdel': {
-        var ap = data.plans.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
-        if (!confirm('지난 계획 「' + ap.name + '」의 기록을 지울까요? 되돌릴 수 없어요.')) return;
-        data.plans = data.plans.filter(function (x) { return x !== ap; }); save(); break;
+      case 'useplan': {
+        var to = data.plans.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+        if (to.id === p.id) return;
+        if (!confirm('「' + to.name + '」 계획으로 바꿀까요?\n지금 쓰는 「' + p.name + '」은 오늘부터 일시정지돼요 (진도가 그대로 멈춰요). 나중에 다시 고르면 멈춘 곳부터 이어져요.')) return;
+        L.switchPlan(p, to, t); data.activePlanId = to.id;
+        ui.viewDate = null; ui.editDate = null; ui.calDate = null;
+        save(); runAutoClose(true); ensureRows(); toast('「' + to.name + '」 계획으로 바꿨어요'); break;
+      }
+      case 'delplan': {
+        var dp = data.plans.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+        if (!confirm('「' + dp.name + '」 계획과 그 기록을 모두 지울까요? 되돌릴 수 없어요.')) return;
+        data.plans = data.plans.filter(function (x) { return x !== dp; }); save(); break;
       }
       case 'newplan': openNewPlan(); return;
       case 'npset': {
@@ -1323,16 +1335,11 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         if (!np.start || !np.end || np.start > np.end) { toast('시작일이 종료일보다 앞이어야 해요'); return; }
         var nm2 = np.name.trim() || (korDate(np.start).split(' (')[0] + ' 계획');
         var newP = L.newPlanFrom(p, t, { id: 'p' + Date.now(), name: nm2, start: np.start, end: np.end, subjects: np.subs });
-        // 지금 계획은 어제까지로 끝내고 보관
-        var yest = L.addDays(t, -1);
-        if (yest < p.end) p.end = yest < p.start ? L.addDays(p.start, -1) : yest;
-        L.autoClose(p, t);
-        p.archivedAt = t;
+        L.switchPlan(p, newP, t); // 지금 계획은 오늘부터 일시정지
         data.plans.push(newP); data.activePlanId = newP.id;
-        np = null; ui.modal = null; ui.viewDate = null; ui.archiveId = null; ui.tab = 'today';
+        np = null; ui.modal = null; ui.viewDate = null; ui.tab = 'today';
         save(); runAutoClose(true); toast('새 계획 「' + newP.name + '」을 시작했어요!'); break;
       }
-      case 'export': exportJSON(); return;
       case 'mode': readTableDraft(); draft.mode = b.getAttribute('data-mode'); render(); return;
       case 'savetable': {
         readTableDraft();
@@ -1376,14 +1383,6 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     }
   });
   document.addEventListener('change', function (e) {
-    if (e.target.getAttribute('data-act') === 'importfile') {
-      var jf = e.target.files && e.target.files[0]; if (!jf) return;
-      var jr = new FileReader();
-      jr.onload = function () { importJSON(String(jr.result)); };
-      jr.readAsText(jf, 'utf-8');
-      e.target.value = '';
-      return;
-    }
     if (e.target.getAttribute('data-act') === 'csvfile') {
       var f = e.target.files && e.target.files[0]; if (!f) return;
       var rd = new FileReader();
