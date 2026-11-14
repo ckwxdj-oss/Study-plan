@@ -195,6 +195,65 @@ test('(예상) 종료일까지 몇 강 예정인지, 며칠 초과되는지', fu
   eq(g[1].finishDate, '2026-12-25', '하루 밀린 뒤 영단어');
 });
 
+function per(from, to, wk, we) { return { from: from, to: to, days: [we, wk, wk, wk, wk, wk, we] }; } // 평일 wk, 토·일 we
+
+test('(분량) 기간별 하루 분량: 11/16~12/26 하루 1강, 12/27~ 하루 3강', function () {
+  var p = makePlan([subj('kor', 40, 9, [], { periods: [per('2026-11-16', '2026-12-26', 1, 1), per('2026-12-27', '2027-02-28', 3, 3)] })], '2026-12-25', '2027-02-28');
+  eq(L.quotaFor(p, p.subjects[0], '2026-12-26'), 1, '12/26');
+  eq(L.quotaFor(p, p.subjects[0], '2026-12-27'), 3, '12/27');
+  checkAll(p, '2026-12-25', '2026-12-25'); L.closeDay(p, '2026-12-25', '2026-12-25');
+  eq(unitsShown(p, '2026-12-26', '2026-12-26', 'kor'), [2], '12/26은 1강');
+  eq(unitsShown(p, '2026-12-26', '2026-12-27', 'kor'), [3, 4, 5], '12/27부터 3강 (예상)');
+});
+
+test('(분량) 요일별 분량: 평일 1강, 토·일 3강', function () {
+  // 2026-12-25 금, 26 토, 27 일, 28 월
+  var p = makePlan([subj('kor', 40, 9, [], { periods: [per('2026-12-01', '2027-02-28', 1, 3)] })], '2026-12-25');
+  eq(unitsShown(p, '2026-12-25', '2026-12-25', 'kor'), [1], '금');
+  eq(unitsShown(p, '2026-12-25', '2026-12-26', 'kor'), [2, 3, 4], '토');
+  eq(unitsShown(p, '2026-12-25', '2026-12-27', 'kor'), [5, 6, 7], '일');
+  eq(unitsShown(p, '2026-12-25', '2026-12-28', 'kor'), [8], '월');
+});
+
+test('(분량) 기간 규칙이 없는 날은 기본 분량', function () {
+  var p = makePlan([subj('kor', 40, 2, [], { periods: [per('2027-01-01', '2027-01-31', 3, 3)] })]);
+  eq(L.quotaFor(p, p.subjects[0], '2026-12-31'), 2);
+  eq(L.quotaFor(p, p.subjects[0], '2027-01-01'), 3);
+  eq(L.quotaFor(p, p.subjects[0], '2027-02-01'), 2);
+});
+
+test('(쉬는 날) 매주 일요일 쉬기 + 날짜 지정, 진도가 멈췄다가 이어짐', function () {
+  var p = makePlan([subj('kor', 40, 2)], '2026-12-25');
+  p.restWeekdays = [0];          // 일요일(12/27)
+  p.restDays = ['2026-12-28'];   // 월요일
+  checkAll(p, '2026-12-25', '2026-12-25'); L.closeDay(p, '2026-12-25', '2026-12-25');
+  eq(L.dayOf(p, '2026-12-26', '2026-12-27').status, 'rest', '일요일 쉬는 날');
+  eq(L.dayOf(p, '2026-12-26', '2026-12-28').items, [], '지정한 날 할 일 없음');
+  eq(unitsShown(p, '2026-12-26', '2026-12-26', 'kor'), [3, 4], '토요일');
+  eq(unitsShown(p, '2026-12-26', '2026-12-29', 'kor'), [5, 6], '화요일에 이어서');
+});
+
+test('(쉬는 날) 지난 날은 나중에 쉬는 날 설정을 바꿔도 기록이 그대로', function () {
+  var p = makePlan([subj('kor', 40, 2)]);
+  L.autoClose(p, D2); // D1 못 함
+  p.restDays = [D1];
+  eq(L.dayOf(p, D2, D1).status, 'missed', '마감된 날은 그대로 빨간 X');
+});
+
+test('(분량) 기간 분량을 바꾸면 지난 날은 그대로, 오늘부터 다시 계산', function () {
+  var p = makePlan([subj('math', 30, 3, [], { periods: [per(D1, '2027-02-28', 3, 3)] })]);
+  checkAll(p, D1, D1); L.closeDay(p, D1, D1);
+  p.subjects[0].periods[0].days = [2, 2, 2, 2, 2, 2, 2];
+  eq(unitsShown(p, D2, D1, 'math'), [1, 2, 3], '지난 날');
+  eq(unitsShown(p, D2, D2, 'math'), [4, 5], '오늘');
+});
+
+test('(예상) 종료일 뒤 예상은 마지막 기간 규칙을 이어서 씀', function () {
+  var p = makePlan([subj('kor', 30, 9, [], { periods: [per(D1, '2026-12-29', 2, 2)] })], D1, '2026-12-29');
+  var f = L.forecast(p, D1);
+  eq([f[0].byEnd, f[0].finishDate], [20, '2027-01-03']);
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);
