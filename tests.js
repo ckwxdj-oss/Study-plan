@@ -124,6 +124,49 @@ test('6. 쉬는 날에는 할 일이 없고 진도가 멈춤', function () {
   eq(unitsShown(p, D3, D3, 'eng'), [2], '영어 진도 멈췄다가 이어짐');
 });
 
+var csvText = fs.readFileSync(path.join(__dirname, 'math_curriculum.csv'), 'utf8');
+
+test('(CSV) math_curriculum.csv 읽기와 체크 항목 만들기', function () {
+  var res = L.rowsFromCSV(csvText);
+  eq(res.rows.length, 134, '일차 수');
+  eq(res.errors, [], '오류 없음');
+  eq(res.rows[0].title, '수학1 · 지수함수와 로그함수 · 개념때려잡기', '1일차 제목');
+  eq(res.rows[0].items, ['01강 강의 듣기', '01강 1차 복습', '02강 강의 듣기', '02강 1차 복습', '03강 강의 듣기', '03강 1차 복습'], '강의 듣고 1차 복습');
+  eq(res.rows[8].items, ['2차 복습 01강-05강'], '2차 복습은 1개');
+  eq(res.rows[21].items, ['문제풀이 Step 1 [1/2]'], '문제풀이는 1개');
+  eq(res.rows[29].items, ['취집공 3차 복습 1단원 취집공'], '취집공 3차 복습은 1개');
+  eq(res.rows[37].items, ['취집공 4차 복습 1단원 취집공'], '취집공 4차 복습은 1개');
+  // 따옴표, 줄바꿈(CRLF) 처리
+  var r2 = L.rowsFromCSV('일차,과목,단원,교재,학습방법,진도\r\n1,수학2,"미분, 적분",기출끝,문제풀이,Step 1\r\n');
+  eq(r2.rows[0].title, '수학2 · 미분, 적분 · 기출끝', '쉼표가 든 칸');
+  eq(L.rowsFromCSV('a,b\n1,2').errors.length, 1, '열 이름이 틀리면 알려 줌');
+});
+
+function mathPlan(mode) {
+  var rows = L.rowsFromCSV(csvText).rows;
+  return makePlan([{ id: 'math', type: 'table', name: '수학', rows: rows, daily: 1, mode: mode }]);
+}
+
+test('7-A. CSV 과목, 1일차 일부를 못 함 → (기본) 남은 항목이 1일차 자리를 차지', function () {
+  var p = mathPlan('A');
+  eq(shownOf(p, D1, D1, 'math').length, 6, '1일차 체크 6개');
+  // 01강·02강은 다 하고, 03강 강의는 듣고 03강 1차 복습만 못 함
+  [0, 1, 2, 3, 4].forEach(function (k) { check(p, D1, 'math', 1, k); });
+  L.closeDay(p, D1, D1);
+  eq(shownOf(p, D2, D2, 'math'), ['1:5'], '다음 날은 1일차 남은 항목(03강 1차 복습)만');
+  checkAll(p, D2, D2); L.closeDay(p, D2, D2);
+  eq(unitsShown(p, D3, D3, 'math'), [2], '그다음 날 원래 2일차');
+});
+
+test('7-B. CSV 과목, 1일차 일부를 못 함 → 남은 항목 + 원래 다음 일차를 같이', function () {
+  var p = mathPlan('B');
+  [0, 1, 2, 3, 4].forEach(function (k) { check(p, D1, 'math', 1, k); });
+  L.closeDay(p, D1, D1);
+  eq(shownOf(p, D2, D2, 'math'), ['1:5', '2:0', '2:1', '2:2', '2:3'], '1일차 남은 항목 + 2일차(04강·05강)');
+  checkAll(p, D2, D2); L.closeDay(p, D2, D2);
+  eq(unitsShown(p, D3, D3, 'math'), [3], '그다음 날 원래 3일차');
+});
+
 test('8. 마감한 날의 체크를 고쳤을 때 이후 계획이 다시 계산됨', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   check(p, D1, 'kor', 1); L.closeDay(p, D1, D1); // 2강을 실수로 안 체크
