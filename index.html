@@ -177,6 +177,22 @@ button{cursor:pointer;touch-action:manipulation}
 .pick{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .pick .wkb{padding:0 16px}
 
+/* 복습 */
+.revsec h2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.revlist{display:flex;flex-direction:column;gap:10px}
+.revrow{display:flex;gap:8px;align-items:stretch}
+.revrow .chk{flex:1}
+.chk .lbl{display:flex;flex-direction:column;gap:2px}
+.chk .lbl small{font-weight:500;color:var(--sub);font-size:14px}
+.chk.overdue{border-color:var(--red);background:var(--red-soft)}
+.chk.overdue .lbl b{color:var(--red)}
+.chk.overdue.on{border-color:var(--green);background:var(--green-soft)}
+.howbtn{flex:none;min-width:72px;border-radius:14px;border:2px solid var(--line);background:var(--card);font-weight:700;font-size:15px}
+.howbtn.sm{min-height:40px;padding:4px 12px;border-radius:99px;font-size:14px}
+.howbox{background:var(--accent-soft);border-radius:12px;padding:10px 14px 10px 4px;margin:6px 0 2px;font-size:16px}
+.howbox ol{margin:0;padding-left:28px}
+.kind{font-size:13px;font-weight:700;padding:1px 8px;border-radius:99px;background:var(--gray-soft);color:var(--sub);align-self:flex-start}
+
 /* 모달 */
 .modal{position:fixed;inset:0;background:rgba(10,15,25,.5);display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:50}
 .modal .sec{width:100%;max-width:640px;margin:0}
@@ -220,7 +236,8 @@ var StudyLogic = (function () {
     var units = [];
     if (s.type === 'table') {
       (s.rows || []).forEach(function (r, i) {
-        units.push({ index: i, title: (r.day || i + 1) + '일차', sub: r.title, items: r.items.map(function (lbl, k) { return { id: itemId(s.id, i, k), label: lbl }; }) });
+        units.push({ index: i, title: (r.day || i + 1) + '일차', sub: r.title, row: r, skip: !!(s.fiveStep && isFiveSkip(r)),
+          items: r.items.map(function (lbl, k) { return { id: itemId(s.id, i, k), label: lbl }; }) });
       });
     } else {
       var tasks = (s.tasks || []).filter(function (t) { return t && String(t).trim(); });
@@ -301,6 +318,13 @@ var StudyLogic = (function () {
     return { rows: rows, errors: errors };
   }
 
+  /* ---------- 복습 규칙 ---------- */
+  var FIVE_DAYS = [14, 28, 42, 56];                // 수학 5단계 복습 2차~5차 (완료한 날 기준)
+  // 5단계 방식에서 진도 줄에서 빼는 일차: "2차 복습", "취집공 3차 복습", "취집공 4차 복습" 등
+  function isFiveSkip(row) { var m = (row.method || '').trim(); return !/^강의/.test(m) && /차\s*복습$/.test(m); }
+  function isLectureRow(row) { return /^강의\s*듣고/.test((row.method || '').trim()); }
+  function spacedOf(s) { return (s.spaced || []).map(Number).filter(function (n) { return n > 0; }); }
+
   /* ---------- 하루 분량 ---------- */
   // 쉬는 날: 날짜로 지정(restDays) 또는 매주 요일로 지정(restWeekdays, 0=일 ~ 6=토)
   function isRestDay(plan, date) {
@@ -339,6 +363,7 @@ var StudyLogic = (function () {
   function pickItems(units, done, n, mode) {
     var out = [], count = 0;
     for (var i = 0; i < units.length && count < n; i++) {
+      if (units[i].skip) continue;
       var items = units[i].items;
       var rem = items.filter(function (it) { return !done.has(it.id); });
       if (!rem.length) continue;
@@ -365,19 +390,37 @@ var StudyLogic = (function () {
     opts = opts || {};
     until = until || today;
     var subs = plan.subjects.map(function (s) { return { s: s, units: unitsOf(s) }; });
-    var known = new Set(), remain = {}, finish = {}, atEnd = null;
+    var subById = {}, known = new Set(), remain = {}, unitLeft = {}, finish = {}, atEnd = null;
     subs.forEach(function (x) {
+      subById[x.s.id] = x;
       remain[x.s.id] = 0;
-      x.units.forEach(function (u) { u.items.forEach(function (it) { known.add(it.id); remain[x.s.id]++; }); });
+      x.units.forEach(function (u) {
+        unitLeft[x.s.id + '|' + u.index] = u.items.length;
+        u.items.forEach(function (it) { known.add(it.id); if (!u.skip) remain[x.s.id]++; });
+      });
     });
     var done = new Set();
-    // 완료 표시 + 과목별 남은 항목 수 세기
-    function markDone(id) {
+    // 복습: 묶음(강·일차)을 실제로 끝낸 날짜를 기준으로 만든다
+    var revDue = {}, pending = [], sessions = {};   // sessions[sid] = [{date, units:[...]}] (끝낸 날짜별)
+    function addReview(id, due) { if (revDue[id]) return; revDue[id] = due; pending.push(id); }
+    function onUnitDone(x, u, date) {
+      var sid = x.s.id, ss = sessions[sid] = sessions[sid] || [], lastS = ss[ss.length - 1];
+      if (lastS && lastS.date === date) lastS.units.push(u.index); else ss.push({ date: date, units: [u.index] });
+      spacedOf(x.s).forEach(function (k) { addReview('R|' + sid + '|' + u.index + '|' + k, addDays(date, k)); });
+      if (x.s.type === 'table' && x.s.fiveStep && u.row && isLectureRow(u.row) && !u.skip) {
+        FIVE_DAYS.forEach(function (k, i) { addReview('F|' + sid + '|' + u.index + '|' + (i + 2), addDays(date, k)); });
+      }
+    }
+    // 완료 표시 (date: 완료한 날) + 과목별 남은 항목 수 + 묶음을 다 끝냈으면 복습 만들기
+    function markDone(id, date) {
       if (done.has(id)) return;
       done.add(id);
-      if (known.has(id)) remain[id.split('|')[0]]--;
+      if (!known.has(id)) return;
+      var q = id.split('|'), x = subById[q[0]], u = x.units[+q[1]];
+      if (!u.skip) remain[q[0]]--;
+      if (--unitLeft[q[0] + '|' + q[1]] === 0 && date) onUnitDone(x, u, date);
     }
-    Object.keys(plan.carry || {}).forEach(function (k) { if (plan.carry[k]) markDone(k); });
+    Object.keys(plan.carry || {}).forEach(function (k) { if (plan.carry[k]) markDone(k, null); });
     subs.forEach(function (x) { if (remain[x.s.id] === 0) finish[x.s.id] = 'before'; });
     var seen = new Set();
     plan.days = plan.days || {};
@@ -388,10 +431,11 @@ var StudyLogic = (function () {
     for (var d = plan.start; d <= last; d = addDays(d, 1)) {
       var rec = plan.days[d];
       var frozen = !!(rec && rec.closed && rec.shown);
+      var paused = isPaused(plan, d);
       var shown = {};
       // 밀린 과목: 전에 화면에 나왔는데 아직 못 한 새 진도가 있는 과목 (과목별 개수)
       var behind = {};
-      seen.forEach(function (id) { if (!done.has(id)) { var sid0 = id.split('|')[0]; behind[sid0] = (behind[sid0] || 0) + 1; } });
+      seen.forEach(function (id) { if (!done.has(id) && known.has(id)) { var sid0 = id.split('|')[0]; behind[sid0] = (behind[sid0] || 0) + 1; } });
       var pulls = (rec && rec.pulls) || {};
       subs.forEach(function (x) {
         var sid = x.s.id;
@@ -399,6 +443,31 @@ var StudyLogic = (function () {
           ? (rec.shown[sid] || []).filter(function (id) { return known.has(id); })
           : pickItems(x.units, done, quotaFor(plan, x.s, d, opts.extend) + (pulls[sid] || 0), x.s.mode);
       });
+
+      // 일요일: 이번 주(월~토)에 끝낸 강으로 "이번 주 복습" 만들기
+      if (weekday(d) === 0 && !paused && d <= plan.end) {
+        subs.forEach(function (x) {
+          if (!x.s.weekly) return;
+          var from = addDays(d, -6), us = [];
+          (sessions[x.s.id] || []).forEach(function (se) { if (se.date >= from && se.date < d) us = us.concat(se.units); });
+          if (us.length) addReview('W|' + x.s.id + '|' + d + '|' + us.join('.'), d);
+        });
+      }
+      // 오늘의 복습 목록
+      var rev = [];
+      if (frozen) rev = (rec.shown._rev || []).slice();
+      else if (!paused && d <= plan.end) {
+        // 지난번 훑어보기: 그 과목 새 진도가 있는 날, 맨 앞에 (그날만 나옴)
+        subs.forEach(function (x) {
+          var ss = sessions[x.s.id];
+          if (!x.s.skim || !shown[x.s.id].length || !ss || !ss.length) return;
+          var pv = ss[ss.length - 1];
+          rev.push('S|' + x.s.id + '|' + d + '|' + pv.date + '|' + pv.units.join('.'));
+        });
+        // 날짜가 된 복습 + 아직 안 한 밀린 복습
+        pending.forEach(function (id) { if (revDue[id] <= d && !done.has(id)) rev.push(id); });
+      }
+      shown._rev = rev;
 
       if (!frozen && ((opts.autoClose && d < today) || opts.closeDate === d)) {
         rec = plan.days[d] = Object.assign({ checked: {}, memo: '' }, rec || {});
@@ -409,32 +478,34 @@ var StudyLogic = (function () {
       }
 
       var checked = (rec && rec.checked) || {};
-      Object.keys(checked).forEach(function (id) { if (checked[id]) markDone(id); });
+      Object.keys(checked).forEach(function (id) { if (checked[id]) markDone(id, d); });
 
       var all = flatten(shown);
       var carried = all.filter(function (id) { return seen.has(id); });
       // 마감한 날은 마감할 때의 쉬는 날 여부를 그대로 씀 (나중에 쉬는 날 설정을 바꿔도 지난 기록은 그대로)
       var rest = frozen ? !!rec.rest : isRestDay(plan, d);
-      var paused = isPaused(plan, d);
       var closed = !!(rec && rec.closed);
       var future = d > today;
       var missed = future ? [] : all.filter(function (id) { return !done.has(id); });
+      var overdue = rev.filter(function (id) { return revDue[id] && revDue[id] < d; });
       var status;
       if (d > plan.end) status = 'after';
       else if (paused) status = 'paused';
-      else if (rest) status = 'rest';
+      else if (rest && !all.length) status = 'rest';
       else if (future) status = 'future';
       else if (!all.length) status = 'empty';
       else if (!closed) status = 'open';
       else status = missed.length ? 'missed' : 'done';
 
       if (!opts.extend || d <= plan.end) {
-        days.push({ date: d, shown: shown, items: all, missed: missed, carried: carried, status: status, rest: rest, paused: paused, closed: closed, behind: behind, pulls: pulls });
+        days.push({ date: d, shown: shown, reviews: rev, overdue: overdue, items: all, missed: missed, carried: carried, status: status,
+          rest: rest, paused: paused, closed: closed, behind: behind, pulls: pulls });
       }
 
       all.forEach(function (id) { seen.add(id); });
       // 미래 예상: 앞으로의 날(그리고 아직 마감 안 한 오늘)은 계획대로 다 한다고 가정
-      if (future || (d === today && last > today && !closed)) all.forEach(markDone);
+      if (future || (d === today && last > today && !closed)) all.forEach(function (id) { markDone(id, d); });
+      if (pending.length > 50) pending = pending.filter(function (id) { return !done.has(id); });
 
       var allDone = true;
       subs.forEach(function (x) {
@@ -448,7 +519,78 @@ var StudyLogic = (function () {
       }
       if (opts.extend && allDone && d >= plan.end) break;
     }
-    return { days: days, done: done, subs: subs, closedCount: closedCount, finish: finish, atEnd: atEnd };
+    return { days: days, done: done, subs: subs, closedCount: closedCount, finish: finish, atEnd: atEnd, revDue: revDue };
+  }
+
+  /* ---------- 복습 항목 설명 / 묶기 ----------
+     R|과목|묶음|k     : k일 뒤 복습 (국어·영어 3·7일, 영단어 1·3·7일)
+     F|과목|일차|n     : 수학 5단계 복습 n차
+     S|과목|날짜|지난번날짜|묶음들 : 지난번 훑어보기
+     W|과목|일요일|묶음들 : 이번 주 복습 */
+  function reviewInfo(subs, id) {
+    var q = id.split('|'), x = subs.filter(function (y) { return y.s.id === q[1]; })[0];
+    if (!x) return { kind: '?', sid: q[1], title: id, units: [] };
+    var name = x.s.name, us = function (str) { return str ? str.split('.').map(Number) : []; };
+    var titles = function (arr) { return arr.map(function (u) { return x.units[u] ? x.units[u].title : u + 1; }); };
+    if (q[0] === 'R') {
+      var u = x.units[+q[2]];
+      return { kind: 'spaced', sid: q[1], k: +q[3], units: [+q[2]], title: name + ' ' + (u ? u.title : '') + ' 복습 (' + q[3] + '일 뒤)' };
+    }
+    if (q[0] === 'F') {
+      var fu = x.units[+q[2]], r = (fu && fu.row) || {}, parts = (r.title || '').split(' · ');
+      return { kind: 'five', sid: q[1], stage: +q[3], units: [+q[2]], how: true,
+        title: (parts[0] || '') + ' ' + (parts[1] || '') + ' ' + (r.range || '') + ' · 5단계 복습 ' + q[3] + '차' };
+    }
+    if (q[0] === 'S') {
+      var su = us(q[4]);
+      return { kind: 'skim', sid: q[1], prev: q[3], units: su,
+        title: '지난번(' + '일월화수목금토'[weekday(q[3])] + ') ' + name + ' 훑어보기', detail: titles(su).join(', ') };
+    }
+    if (q[0] === 'W') {
+      var wu = us(q[3]);
+      return { kind: 'weekly', sid: q[1], units: wu, title: '이번 주 ' + name + ' 복습', detail: titles(wu).join(', ') };
+    }
+    return { kind: '?', sid: q[1], title: id, units: [] };
+  }
+  // 화면에 보여줄 복습 묶음: 같은 날 "3일 뒤 복습"과 "지난번 훑어보기"가 같은 내용이면 하나로 합침
+  //   revDue 를 주면: 같은 날 끝낸 강들의 같은 간격 복습을 한 줄로 묶음 (예: 국어 1강·2강 복습 (3일 뒤))
+  function groupReviews(subs, ids, date, revDue) {
+    var used = {}, out = [];
+    // 훑어보기를 먼저 살펴서 합칠 3일 복습을 찾음 (목록 순서와 상관없이)
+    var order = ids.filter(function (id) { return id[0] === 'S'; }).concat(ids.filter(function (id) { return id[0] !== 'S'; }));
+    order.forEach(function (id) {
+      if (used[id]) return;
+      var info = reviewInfo(subs, id);
+      if (info.kind === 'skim' && info.prev === addDays(date, -3)) {
+        var rs = info.units.map(function (u) { return 'R|' + info.sid + '|' + u + '|3'; });
+        if (rs.length && rs.every(function (r) { return ids.indexOf(r) >= 0; })) {
+          rs.forEach(function (r) { used[r] = true; });
+          used[id] = true;
+          out.push({ ids: [id].concat(rs), kind: 'merged', sid: info.sid, units: info.units,
+            title: info.title + ' + 3일 뒤 복습', detail: info.detail });
+          return;
+        }
+      }
+      used[id] = true;
+      info.ids = [id];
+      if (info.kind === 'spaced' && revDue && revDue[id]) {
+        var gk = info.sid + '|' + info.k + '|' + revDue[id];
+        var same = out.filter(function (e) { return e.gk === gk; })[0];
+        if (same) {
+          same.ids.push(id); same.units.push(info.units[0]);
+          var x = subs.filter(function (y) { return y.s.id === info.sid; })[0];
+          same.title = x.s.name + ' ' + same.units.map(function (u) { return x.units[u].title; }).join('·') + ' 복습 (' + info.k + '일 뒤)';
+          return;
+        }
+        info.gk = gk;
+      }
+      out.push(info);
+    });
+    // 맨 앞: 훑어보기 → 그다음 나머지
+    var rank = { skim: 0, merged: 0 };
+    return out.map(function (e, i) { return [e, i]; }).sort(function (a, b) {
+      return ((rank[a[0].kind] == null ? 1 : 0) - (rank[b[0].kind] == null ? 1 : 0)) || a[1] - b[1];
+    }).map(function (p) { return p[0]; });
   }
 
   /* ---------- 과목별 예상: 종료일까지 얼마나, 언제 다 끝나는지 ----------
@@ -598,19 +740,22 @@ var StudyLogic = (function () {
   /* ---------- 진행 상황 ---------- */
   function progress(units, done) {
     var full = 0, items = 0, doneItems = 0;
+    var total = 0;
     units.forEach(function (u) {
+      if (u.skip) return;
+      total++;
       var c = u.items.filter(function (it) { return done.has(it.id); }).length;
       items += u.items.length; doneItems += c;
       if (c === u.items.length) full++;
     });
-    return { doneUnits: full, totalUnits: units.length, doneItems: doneItems, totalItems: items };
+    return { doneUnits: full, totalUnits: total, doneItems: doneItems, totalItems: items };
   }
 
   return {
     pad: pad, parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, weekday: weekday, diffDays: diffDays,
     itemId: itemId, unitsOf: unitsOf, parseCSV: parseCSV, itemsFor: itemsFor, rowsFromCSV: rowsFromCSV, quotaFor: quotaFor, periodFor: periodFor, isRestDay: isRestDay, isPaused: isPaused, switchPlan: switchPlan, doesDay: doesDay, nextDoDay: nextDoDay, pull: pull, unpull: unpull, pickItems: pickItems,
     simulate: simulate, autoClose: autoClose, closeDay: closeDay, reopenDay: reopenDay, setCheck: setCheck,
-    dayOf: dayOf, progress: progress, forecast: forecast, stats: stats, newPlanFrom: newPlanFrom
+    dayOf: dayOf, progress: progress, reviewInfo: reviewInfo, groupReviews: groupReviews, isFiveSkip: isFiveSkip, forecast: forecast, stats: stats, newPlanFrom: newPlanFrom
   };
 })();
 if (typeof module !== 'undefined') module.exports = StudyLogic;
@@ -655,10 +800,23 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       ]
     };
     applyWeeklySetup(p);
-    return { version: 1, activePlanId: p.id, plans: [p], setupA: true };
+    applyReviewSetup(p);
+    return { version: 1, activePlanId: p.id, plans: [p], setupA: true, setupB: true };
   }
   // 요일별 과목 기본 설정 (A단계): 이름으로 과목을 찾아 하는 요일을 넣고, 없는 과목은 새로 추가
   function WK(str) { return [0, 1, 2, 3, 4, 5, 6].map(function (i) { return str.indexOf('일월화수목금토'[i]) >= 0; }); }
+  // 복습 기본 설정 (B단계)
+  function applyReviewSetup(p) {
+    p.subjects.forEach(function (s) {
+      if (/국어/.test(s.name) || (/영어/.test(s.name) && !/단어/.test(s.name))) {
+        s.spaced = [3, 7]; s.skim = true; s.weekly = true; if (s.weeklyMin == null) s.weeklyMin = 30;
+      } else if (/통합사회|통합과학|한국사/.test(s.name)) {
+        s.weekly = true; if (s.weeklyMin == null) s.weeklyMin = 30;
+      } else if (s.type === 'table' && /수학/.test(s.name)) {
+        s.fiveStep = true;
+      }
+    });
+  }
   function applyWeeklySetup(p) {
     var find = function (re, not) { return p.subjects.filter(function (s) { return re.test(s.name) && !(not && not.test(s.name)); })[0]; };
     var set = function (s, days) { if (s) s.weekdays = WK(days); };
@@ -722,6 +880,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     }
     upgradeData();
     if (!data.setupA) { applyWeeklySetup(plan()); data.setupA = true; save(); }
+    if (!data.setupB) { applyReviewSetup(plan()); data.setupB = true; save(); }
     ensureRows();
   }
   // 예전 버전 데이터 맞추기: '보관된 계획' → '일시정지된 계획'
@@ -851,8 +1010,10 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       groups.forEach(function (u) {
         var unit = x.units[u];
         var carried = byUnit[u].some(function (id) { return day.carried.indexOf(id) >= 0; });
+        var hk = 'L|' + s.id + '|' + u, lect = unit.row && /^강의\s*듣고/.test(unit.row.method || '');
         h += '<div class="unit"><div class="unit-title">' + esc(unit.title) + (carried ? '<span class="tag">⟲ 밀린 할 일</span>' : '') +
-          (unit.sub ? '<span class="unit-sub">' + esc(unit.sub) + '</span>' : '') + '</div><div class="tasks">';
+          (lect ? '<button class="howbtn sm" data-act="how" data-k="' + esc(hk) + '">📖 1차 복습 방법</button>' : '') +
+          (unit.sub ? '<span class="unit-sub">' + esc(unit.sub) + '</span>' : '') + '</div>' + (lect && ui.how && ui.how[hk] ? HOW : '') + '<div class="tasks">';
         byUnit[u].forEach(function (id) {
           var k = +id.split('|')[2], it = unit.items[k];
           var on, cls = 'chk', note = '';
@@ -871,6 +1032,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       h += '</div>';
     });
     h += '</div>';
+    h += renderReviews(sim, day, rec, editing);
     if (offList.length) h += '<p class="hint" style="margin-top:14px">😌 오늘 안 하는 과목: ' + offList.join(', ') + '</p>';
 
     // 백업 알림
@@ -902,6 +1064,29 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       '<button class="bigbtn ghost" data-act="edit">' + (editing ? '고치기 끝' : '체크 고치기') + '</button>' +
       (d === t ? '<button class="bigbtn ghost" data-act="reopen">마감 취소</button>' : '') + '</div>';
     return h + backupTip;
+  }
+
+  var HOW = '<div class="howbox"><ol><li>교재의 개념 설명 부분을 천천히 읽기</li><li>그날 배운 것과 푼 문제를 머릿속으로 정리하기</li>' +
+    '<li>빈 종이에 수업 내용을 순서대로 소리 내어 설명하기</li><li>문제는 풀이 단계마다 왜 그렇게 하는지 이유를 말하며 설명하기</li></ol></div>';
+  var KIND = { skim: '훑어보기', merged: '훑어보기+3일', spaced: '간격 복습', five: '5단계 복습', weekly: '이번 주 복습' };
+  // 오늘 화면의 복습 목록
+  function renderReviews(sim, day, rec, editing) {
+    var list = L.groupReviews(sim.subs, day.reviews || [], day.date, sim.revDue);
+    if (!list.length) return '';
+    var h = '<div class="sec revsec" style="margin-top:16px"><h2>🔁 복습</h2><div class="revlist">';
+    list.forEach(function (e) {
+      var od = e.ids.some(function (id) { return (day.overdue || []).indexOf(id) >= 0; });
+      var on = day.status !== 'future' && e.ids.every(function (id) { return rec.checked && rec.checked[id]; });
+      var cls = 'chk' + (on ? ' on' : '') + (od ? ' overdue' : '');
+      if (day.status === 'future' || (day.closed && !editing)) cls += ' locked';
+      if (day.closed && !on) cls += ' miss';
+      var key = e.ids[0];
+      h += '<div><div class="revrow"><button class="' + cls + '" data-act="togglerev" data-ids="' + esc(e.ids.join(',')) + '"><span class="box">✓</span><span class="lbl">' +
+        '<span class="kind">' + (od ? '⚠️ 밀린 복습' : KIND[e.kind] || '복습') + '</span><b>' + esc(e.title) + '</b>' + (e.detail ? '<small>' + esc(e.detail) + '</small>' : '') + '</span></button>' +
+        (e.how ? '<button class="howbtn" data-act="how" data-k="' + esc(key) + '">📖 방법</button>' : '') + '</div>' +
+        (e.how && ui.how && ui.how[key] ? HOW : '') + '</div>';
+    });
+    return h + '</div></div>';
   }
 
   /* ---------- 달력 / 목록 화면 ---------- */
@@ -1040,6 +1225,16 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       }
       h += '</ul></div>';
     });
+    var rl = L.groupReviews(sim.subs, day.reviews || [], day.date, sim.revDue);
+    if (rl.length) {
+      var recD = p.days[day.date] || {}, past = day.date < t || day.closed;
+      h += '<div class="dsub"><h4>🔁 복습</h4><ul>' + rl.map(function (e) {
+        var ok = e.ids.every(function (id) { return recD.checked && recD.checked[id]; });
+        var od = e.ids.some(function (id) { return (day.overdue || []).indexOf(id) >= 0; });
+        var mark = future ? '• ' : ok ? '<span class="ok">✓</span> ' : past ? '<span class="bad">✗</span> ' : '⬜ ';
+        return '<li>' + mark + (od ? '<span class="bad">[밀림]</span> ' : '') + esc(e.title) + (e.detail ? ' <span class="hint">' + esc(e.detail) + '</span>' : '') + '</li>';
+      }).join('') + '</ul></div>';
+    }
     if (!day.items.length && !day.rest) h += '<p class="hint">이 날은 할 일이 없어요.</p>';
     if (rec.memo) h += '<div class="memo">📝 ' + esc(rec.memo) + '</div>';
     var restBtn = '';
@@ -1056,6 +1251,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   }
 
   function describe(subs, id) {
+    if (/^[RFSW]\|/.test(id)) return '복습 · ' + L.reviewInfo(subs, id).title;
     var p = id.split('|');
     for (var i = 0; i < subs.length; i++) {
       if (subs[i].s.id === p[0]) {
@@ -1093,6 +1289,12 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         : '총 ' + s.total + s.unitName + ' · 하루 ' + s.daily + s.unitName + (s.tasks && s.tasks.length ? ' · [' + s.tasks.join('] [') + ']' : '');
       if (s.periods && s.periods.length) info += ' · 기간 규칙 ' + s.periods.length + '개';
       info = wdText(s) + ' · ' + info;
+      var rv = [];
+      if (s.type === 'table') rv.push(s.fiveStep ? '5단계 복습' : '시간표 방식');
+      if ((s.spaced || []).length) rv.push(s.spaced.join('·') + '일 복습');
+      if (s.skim) rv.push('훑어보기');
+      if (s.weekly) rv.push('주간 복습 ' + (s.weeklyMin == null ? 30 : s.weeklyMin) + '분');
+      if (rv.length) info += ' · 🔁 ' + rv.join(', ');
       h += '<div class="subrow"><div class="nm"><b>' + esc(s.name) + '</b><small>' + esc([s.book, info].filter(Boolean).join(' · ')) + '</small></div>' +
         '<button class="btn" data-act="editsub" data-id="' + s.id + '">수정</button>' +
         '<button class="btn red" data-act="delsub" data-id="' + s.id + '">삭제</button></div>';
@@ -1161,6 +1363,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       weekdaysEditor(s) +
       '<label class="field"><span>하는 날 하루 분량</span><input id="sDaily" type="number" inputmode="numeric" min="0" value="' + s.daily + '"></label>' +
       periodsEditor(s, s.unitName || '') +
+      reviewEditor(s) +
       '<div class="field"><span>세부 할 일 (없으면 단위 하나가 체크 1개)</span><div class="tasklist">';
     s.tasks.forEach(function (t, i) {
       h += '<div class="trow"><input data-task="' + i + '" class="field-in" value="' + esc(t) + '" style="min-height:54px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:8px 14px">' +
@@ -1177,6 +1380,10 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     draft.total = parseInt(g('sTotal'), 10) || 0; draft.daily = parseInt(g('sDaily'), 10); if (isNaN(draft.daily)) draft.daily = 0;
     document.querySelectorAll('[data-task]').forEach(function (e) { draft.tasks[+e.getAttribute('data-task')] = e.value; });
     readPeriods();
+    var sp = document.getElementById('sSpaced');
+    if (sp) draft.spaced = sp.value.split(/[,\s]+/).map(Number).filter(function (n) { return n > 0; });
+    var wm = document.getElementById('sWeeklyMin');
+    if (wm) { var wn = parseInt(wm.value, 10); draft.weeklyMin = isNaN(wn) ? 30 : Math.max(0, wn); }
   }
 
   /* ---------- 새 계획 시작 모달 ---------- */
@@ -1278,6 +1485,13 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     });
     return h + '<button class="btn" data-act="addper">＋ 기간 추가</button></div>';
   }
+  function reviewEditor(s) {
+    return '<div class="field"><span>복습</span>' +
+      '<label class="field"><span class="hint">간격 복습: 강을 끝낸 날부터 며칠 뒤에 (쉼표로 구분, 비우면 없음) 예: 3,7</span><input id="sSpaced" inputmode="numeric" value="' + esc((s.spaced || []).join(',')) + '"></label>' +
+      '<div class="pick" style="margin-bottom:10px"><button class="wkb ' + (s.skim ? 'on' : '') + '" data-act="subflag" data-k="skim">지난번 훑어보기</button>' +
+      '<button class="wkb ' + (s.weekly ? 'on' : '') + '" data-act="subflag" data-k="weekly">일요일 이번 주 복습</button></div>' +
+      '<label class="field"><span class="hint">이번 주 복습 시간 (분)</span><input id="sWeeklyMin" type="number" inputmode="numeric" min="0" value="' + (s.weeklyMin == null ? 30 : s.weeklyMin) + '"></label></div>';
+  }
   function weekdaysEditor(s) {
     var wd = s.weekdays || [true, true, true, true, true, true, true];
     var h = '<div class="field"><span>하는 요일</span><div class="wkbtns">';
@@ -1324,6 +1538,10 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       weekdaysEditor(s) +
       '<label class="field"><span>하는 날 하루 분량 (일차 수)</span><input id="tDaily" type="number" inputmode="numeric" min="0" value="' + s.daily + '"></label>' +
       periodsEditor(s, '일차') +
+      '<div class="field"><span>복습 방식</span>' +
+      '<button class="radio ' + (s.fiveStep ? 'on' : '') + '" data-act="fivemode" data-v="five"><span class="dot"></span><span><b>5단계 복습 (기본)</b><br><span class="hint">「2차 복습」·「취집공 3차/4차 복습」 일차는 건너뛰고, 「강의 듣고 1차 복습」 일차를 끝낸 날부터 14·28·42·56일 뒤에 2~5차 복습이 나와요.</span></span></button>' +
+      '<button class="radio ' + (!s.fiveStep ? 'on' : '') + '" data-act="fivemode" data-v="table"><span class="dot"></span><span><b>시간표 방식</b><br><span class="hint">CSV 진도표의 모든 일차를 순서대로 해요. 5단계 복습은 없어요.</span></span></button>' +
+      '<p class="hint" style="margin:0">방식을 바꾸면 오늘부터의 계획이 다시 계산돼요. 이미 한 기록은 그대로예요.</p></div>' +
       '<div class="field"><span>못 한 항목이 있을 때 다음 날은…</span>' +
       '<button class="radio ' + (s.mode !== 'B' ? 'on' : '') + '" data-act="mode" data-mode="A"><span class="dot"></span><span><b>남은 항목이 1일차 자리를 차지 (기본)</b><br><span class="hint">예: 하루 1일차, 1일차 일부를 못 함 → 다음 날은 1일차 남은 항목만</span></span></button>' +
       '<button class="radio ' + (s.mode === 'B' ? 'on' : '') + '" data-act="mode" data-mode="B"><span class="dot"></span><span><b>남은 항목 + 원래 다음 일차를 같이</b><br><span class="hint">예: 1일차 남은 항목 + 2일차. 단, 하루를 통째로 못 한 일차는 1자리를 차지해요</span></span></button></div>';
@@ -1382,6 +1600,18 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         L.closeDay(p, d, t); save(); toast('마감했어요!');
         if (sundayOn() && L.weekday(d) === 0 && lastBackup() !== t) { ui.modal = backupModal; window.scrollTo(0, 0); }
         break;
+      case 'togglerev': {
+        var dayR = L.dayOf(p, t, d);
+        if (!dayR || dayR.status === 'future') { toast('아직 오지 않은 날은 체크할 수 없어요'); return; }
+        if (dayR.closed && ui.editDate !== d) { toast('마감된 날이에요. 아래 「체크 고치기」를 눌러 고칠 수 있어요'); return; }
+        var rids = b.getAttribute('data-ids').split(','), recR = p.days[d] || {};
+        var allOn = rids.every(function (id) { return recR.checked && recR.checked[id]; });
+        rids.forEach(function (id) { L.setCheck(p, d, id, !allOn); });
+        save(); break;
+      }
+      case 'how': { ui.how = ui.how || {}; var hk2 = b.getAttribute('data-k'); ui.how[hk2] = !ui.how[hk2]; break; }
+      case 'subflag': { readAnyDraft(); var fk = b.getAttribute('data-k'); draft[fk] = !draft[fk]; render(); return; }
+      case 'fivemode': readTableDraft(); draft.fiveStep = b.getAttribute('data-v') === 'five'; render(); return;
       case 'pull': L.pull(p, d, b.getAttribute('data-id')); save(); toast('다음 차례 진도를 오늘로 당겨왔어요'); break;
       case 'unpull': L.unpull(p, d, b.getAttribute('data-id')); save(); toast('당겨오기를 취소했어요'); break;
       case 'subwd': {

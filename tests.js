@@ -359,6 +359,146 @@ test('[새 1-1] 당겨오기 취소', function () {
   eq(L.dayOf(p, TUE, TUE).shown.kor, []);
 });
 
+/* ===== B단계: 간격 복습 ===== */
+function revs(p, today, date) { return L.dayOf(p, today, date).reviews; }
+function has(list, id) { return list.indexOf(id) >= 0; }
+function korSub(extra) { return subj('kor', 40, 1, [], Object.assign({ weekdays: wk('월수목토'), spaced: [3, 7], skim: true, weekly: true }, extra || {})); }
+function carryUnits(p, sid, n, tasks) { for (var u = 0; u < n; u++) for (var k = 0; k < (tasks || 1); k++) p.carry[L.itemId(sid, u, k)] = true; }
+
+test('[새 3] 국어 5강을 12/1(월)에 완료 → 12/4, 12/8에 복습', function () {
+  var p = makePlan([korSub()], MON, '2026-02-28');
+  carryUnits(p, 'kor', 4);                           // 1~4강은 이미 끝낸 상태
+  eq(unitsShown(p, MON, MON, 'kor'), [5]);
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);
+  eq(has(revs(p, WED, WED), 'R|kor|4|3'), false, '12/3엔 아직 없음');
+  eq(has(revs(p, THU, THU), 'R|kor|4|3'), true, '12/4 (3일 뒤)');
+  eq(has(revs(p, '2025-12-07', '2025-12-07'), 'R|kor|4|7'), false, '12/7엔 7일 복습 없음');
+  eq(has(revs(p, MON2, MON2), 'R|kor|4|7'), true, '12/8 (7일 뒤)');
+  eq(L.reviewInfo(L.simulate(p, MON, MON).subs, 'R|kor|4|3').title, 'kor 5강 복습 (3일 뒤)', '표시 이름');
+});
+
+function fivePlan(five) {
+  var rows = L.rowsFromCSV(csvText).rows;
+  return makePlan([{ id: 'math', type: 'table', name: '수학', rows: rows, daily: 1, mode: 'A', fiveStep: five }], MON, '2026-06-30');
+}
+test('[새 4] 5단계: 강의 일차를 12/1에 완료 → 12/15, 12/29, 1/12, 1/26에 2~5차 복습', function () {
+  var p = fivePlan(true);
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);
+  [['2025-12-15', 2], ['2025-12-29', 3], ['2026-01-12', 4], ['2026-01-26', 5]].forEach(function (x) {
+    var id = 'F|math|0|' + x[1];
+    eq(has(revs(p, L.addDays(x[0], -1), L.addDays(x[0], -1)), id), false, x[1] + '차 하루 전엔 없음');
+    eq(has(revs(p, x[0], x[0]), id), true, x[1] + '차 ' + x[0]);
+  });
+  eq(L.reviewInfo(L.simulate(p, MON, MON).subs, 'F|math|0|3').title, '수학1 지수함수와 로그함수 01강-03강 · 5단계 복습 3차', '표시 이름');
+});
+
+test('[새 5] 5단계: 2차 복습·취집공 3차/4차 복습 일차는 건너뜀 (총 95일차)', function () {
+  var p = fivePlan(true);
+  var units = L.unitsOf(p.subjects[0]);
+  eq(L.progress(units, new Set()).totalUnits, 95, '총 95일차');
+  for (var u = 0; u < 8; u++) units[u].items.forEach(function (it) { p.carry[it.id] = true; }); // 1~8일차 끝냄
+  eq(unitsShown(p, MON, MON, 'math'), [10], '9일차(2차 복습)를 건너뛰고 10일차');
+  var seenRows = [];
+  var q = fivePlan(true); q.subjects[0].daily = 200;
+  L.dayOf(q, MON, MON).shown.math.forEach(function (id) { var r = +id.split('|')[1]; if (seenRows.indexOf(r) < 0) seenRows.push(r); });
+  eq(seenRows.length, 95, '한 번에 다 꺼내도 95일차');
+  eq(seenRows.some(function (r) { return L.isFiveSkip(q.subjects[0].rows[r]); }), false, '건너뛸 일차는 하나도 없음');
+});
+
+test('[새 6] 5단계: 문제풀이 일차는 진도로 나오지만 5단계 복습은 없음', function () {
+  var p = fivePlan(true);
+  var units = L.unitsOf(p.subjects[0]);
+  for (var u = 0; u < 21; u++) units[u].items.forEach(function (it) { p.carry[it.id] = true; });
+  eq(unitsShown(p, MON, MON, 'math'), [22], '22일차 문제풀이');
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);
+  var due = L.simulate(p, MON, '2026-03-31').revDue;
+  eq(Object.keys(due).filter(function (k) { return k.indexOf('F|math|21|') === 0; }), [], '문제풀이 복습 없음');
+});
+
+test('[새 7] 시간표 방식: 134일차 전부 순서대로, 5단계 복습 없음', function () {
+  var p = fivePlan(false);
+  eq(L.progress(L.unitsOf(p.subjects[0]), new Set()).totalUnits, 134);
+  var units = L.unitsOf(p.subjects[0]);
+  for (var u = 0; u < 8; u++) units[u].items.forEach(function (it) { p.carry[it.id] = true; });
+  eq(unitsShown(p, MON, MON, 'math'), [9], '9일차(2차 복습)도 나옴');
+  var q = fivePlan(false);
+  checkAll(q, MON, MON); L.closeDay(q, MON, MON);
+  eq(Object.keys(L.simulate(q, MON, '2026-03-31').revDue).filter(function (k) { return k[0] === 'F'; }), [], '5단계 복습 없음');
+});
+
+test('[새 8] 수학 강의 일차가 하루 밀려 12/2에 완료 → 5단계 복습도 12/16부터', function () {
+  var p = fivePlan(true);
+  L.closeDay(p, MON, MON);                           // 12/1 못 함
+  checkAll(p, TUE, TUE); L.closeDay(p, TUE, TUE);    // 12/2에 1일차 완료
+  eq(has(revs(p, '2025-12-15', '2025-12-15'), 'F|math|0|2'), false, '12/15엔 없음');
+  eq(has(revs(p, '2025-12-16', '2025-12-16'), 'F|math|0|2'), true, '12/16 2차');
+  eq(has(revs(p, '2025-12-30', '2025-12-30'), 'F|math|0|3'), true, '12/30 3차');
+});
+
+test('[새 9] 복습을 못 하면 다음 날 밀린 복습으로 남고, 그다음 복습 일정은 그대로', function () {
+  var p = makePlan([korSub()], MON, '2026-02-28');
+  carryUnits(p, 'kor', 4);
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);    // 5강 완료
+  L.autoClose(p, FRI);                               // 12/4 복습 못 함
+  eq(L.dayOf(p, FRI, THU).status, 'missed', '12/4는 빨간 X');
+  var fri = L.dayOf(p, FRI, FRI);
+  eq([has(fri.reviews, 'R|kor|4|3'), has(fri.overdue, 'R|kor|4|3')], [true, true], '12/5에 밀린 복습');
+  eq(fri.shown.kor, [], '복습은 새 진도를 밀어내지 않음 (금요일 국어 없음 그대로)');
+  L.setCheck(p, FRI, 'R|kor|4|3', true); L.closeDay(p, FRI, FRI);
+  eq(has(revs(p, SAT, SAT), 'R|kor|4|3'), false, '하면 사라짐');
+  eq(has(revs(p, SAT, MON2), 'R|kor|4|7'), true, '7일 뒤 복습은 원래대로 12/8');
+});
+
+test('[새 11] 3일 뒤 복습과 지난번 훑어보기가 같은 날 같은 내용이면 하나로', function () {
+  var p = makePlan([subj('eng', 30, 1, [], { weekdays: wk('화수금토'), spaced: [3, 7], skim: true })], SAT, '2026-02-28');
+  checkAll(p, SAT, SAT); L.closeDay(p, SAT, SAT);    // 토 12/6: 1강
+  var TUE2 = '2025-12-09';
+  L.autoClose(p, TUE2);
+  var day = L.dayOf(p, TUE2, TUE2);
+  eq(day.reviews.sort(), ['R|eng|0|3', 'S|eng|2025-12-09|2025-12-06|0'].sort(), '복습 2개');
+  var g = L.groupReviews(L.simulate(p, TUE2, TUE2).subs, day.reviews, TUE2);
+  eq(g.length, 1, '하나로 합쳐짐');
+  eq(g[0].title, '지난번(토) eng 훑어보기 + 3일 뒤 복습');
+  eq(g[0].ids.length, 2, '체크하면 둘 다 완료');
+});
+
+test('[새 B-3] 같은 날 끝낸 강들의 같은 간격 복습은 한 줄로', function () {
+  var p = makePlan([korSub({ daily: 2, skim: false })], MON, '2026-02-28');
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);    // 1·2강
+  var sim = L.simulate(p, THU, THU), day = sim.days[sim.days.length - 1];
+  var g = L.groupReviews(sim.subs, day.reviews, THU, sim.revDue);
+  eq(g.map(function (e) { return e.title; }), ['kor 1강·2강 복습 (3일 뒤)']);
+  eq(g[0].ids, ['R|kor|0|3', 'R|kor|1|3']);
+});
+
+test('[새 12] 국어 월요일 강의의 다음 차례 훑어보기는 화요일이 아니라 수요일', function () {
+  var p = makePlan([korSub()], MON, '2026-02-28');
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);
+  eq(revs(p, TUE, TUE).filter(function (id) { return id[0] === 'S'; }), [], '화요일엔 없음');
+  eq(revs(p, WED, WED).filter(function (id) { return id[0] === 'S'; }), ['S|kor|2025-12-03|2025-12-01|0'], '수요일 맨 앞');
+  eq(L.groupReviews(L.simulate(p, WED, WED).subs, revs(p, WED, WED), WED)[0].title, '지난번(월) kor 훑어보기');
+  L.autoClose(p, THU);
+  eq(revs(p, THU, THU).filter(function (id) { return id[0] === 'S'; }).length, 1, '훑어보기는 다음 날로 안 남음 (목요일엔 새 훑어보기 1개만)');
+});
+
+test('[새 B-1] 일요일 이번 주 복습: 월~토에 끝낸 강 목록 (수학 제외)', function () {
+  var p = makePlan([korSub({ spaced: [] }), subj('math', 30, 1, [], {})], MON, '2026-02-28');
+  [MON, WED, THU].forEach(function (d) { checkAll(p, d, d); L.closeDay(p, d, d); });
+  L.autoClose(p, SUN);
+  var w = revs(p, SUN, SUN).filter(function (id) { return id[0] === 'W'; });
+  eq(w, ['W|kor|2025-12-07|0.1.2'], '국어 1·2·3강');
+  eq(L.reviewInfo(L.simulate(p, SUN, SUN).subs, w[0]).detail, '1강, 2강, 3강');
+});
+
+test('[새 B-2] 쉬는 날에도 복습은 나옴 (새 진도는 멈춤)', function () {
+  var p = makePlan([korSub()], MON, '2026-02-28');
+  p.restDays = [THU];
+  carryUnits(p, 'kor', 4);
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);
+  var thu = L.dayOf(p, MON, THU);
+  eq([thu.shown.kor, has(thu.reviews, 'R|kor|4|3')], [[], true], '쉬는 날: 새 진도 없음, 복습 있음');
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);
