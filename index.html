@@ -240,7 +240,8 @@ var StudyLogic = (function () {
           items: r.items.map(function (lbl, k) { return { id: itemId(s.id, i, k), label: lbl }; }) });
       });
     } else {
-      var tasks = (s.tasks || []).filter(function (t) { return t && String(t).trim(); });
+      // 번호형 / 간격 복습형(영단어): 단위마다 세부 할 일 (간격 복습형은 Day 하나가 체크 1개)
+      var tasks = s.type === 'spaced' ? [] : (s.tasks || []).filter(function (t) { return t && String(t).trim(); });
       var total = Math.max(0, s.total | 0);
       for (var i = 0; i < total; i++) {
         var title = unitTitle(s, i);
@@ -350,7 +351,8 @@ var StudyLogic = (function () {
   function doesDay(s, date) { return !s.weekdays || !!s.weekdays[weekday(date)]; }
   function quotaFor(plan, s, date, ignoreEnd) {
     if (date < plan.start || (date > plan.end && !ignoreEnd)) return 0;
-    if (isRestDay(plan, date) || isPaused(plan, date)) return 0;
+    if (isPaused(plan, date)) return 0;
+    if (isRestDay(plan, date) && s.type !== 'spaced') return 0;   // 쉬는 날에도 영단어(간격 복습형)는 함
     if (!doesDay(s, date)) return 0;
     var per = periodFor(s, date, ignoreEnd && date > plan.end);
     var n = per ? per.days[weekday(date)] : s.daily;
@@ -801,7 +803,8 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     };
     applyWeeklySetup(p);
     applyReviewSetup(p);
-    return { version: 1, activePlanId: p.id, plans: [p], setupA: true, setupB: true };
+    applyWordSetup(p);
+    return { version: 1, activePlanId: p.id, plans: [p], setupA: true, setupB: true, setupC: true };
   }
   // 요일별 과목 기본 설정 (A단계): 이름으로 과목을 찾아 하는 요일을 넣고, 없는 과목은 새로 추가
   function WK(str) { return [0, 1, 2, 3, 4, 5, 6].map(function (i) { return str.indexOf('일월화수목금토'[i]) >= 0; }); }
@@ -814,6 +817,16 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         s.weekly = true; if (s.weeklyMin == null) s.weeklyMin = 30;
       } else if (s.type === 'table' && /수학/.test(s.name)) {
         s.fiveStep = true;
+      }
+    });
+  }
+  // 영단어 → 간격 복습형 (C단계). 체크 기록은 그대로 이어짐 (Day 하나 = 체크 1개는 같음)
+  function applyWordSetup(p) {
+    p.subjects.forEach(function (s) {
+      if (s.type === 'numbered' && /단어/.test(s.name) && !(s.tasks || []).filter(Boolean).length) {
+        s.type = 'spaced'; s.unitName = 'Day'; s.tasks = [];
+        if (s.words == null) s.words = 50;
+        if (!s.spaced || !s.spaced.length) s.spaced = [1, 3, 7];
       }
     });
   }
@@ -881,6 +894,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     upgradeData();
     if (!data.setupA) { applyWeeklySetup(plan()); data.setupA = true; save(); }
     if (!data.setupB) { applyReviewSetup(plan()); data.setupB = true; save(); }
+    if (!data.setupC) { applyWordSetup(plan()); data.setupC = true; save(); }
     ensureRows();
   }
   // 예전 버전 데이터 맞추기: '보관된 계획' → '일시정지된 계획'
@@ -985,6 +999,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       }
       var pr = L.progress(x.units, doneNow);
       var unitLabel = s.type === 'table' ? '일차' : s.unitName;
+      var wordsNote = s.type === 'spaced' && s.words ? ' (새 단어 ' + s.words * (L.quotaFor(p, s, d) || 1) + '개)' : '';
       if (s.type === 'table' && !(s.rows && s.rows.length)) {
         var cs = csvState[s.id] || 'loading';
         h += '<div class="card"><div class="card-h"><h2>' + esc(s.name) + '</h2><span class="book">' + esc(s.book || '') + '</span></div>' +
@@ -995,7 +1010,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       }
       h += '<div class="card"><div class="card-h"><h2>' + esc(s.name) + '</h2><span class="book">' + esc(s.book || '') + '</span>' +
         (pulled ? '<span class="tag">⤴ 당겨옴</span>' + (canEdit ? '<button class="btn" style="margin-left:auto;min-height:44px" data-act="unpull" data-id="' + s.id + '">당겨오기 취소</button>' : '') : '') + '</div>';
-      h += '<div class="card-meta">' + (L.doesDay(s, d) ? '하는 날 · ' : '오늘은 원래 안 하는 날 · ') + (pulled ? '당겨온 ' + pulled + esc(unitLabel) + (L.quotaFor(p, s, d) ? ' + 원래 ' + L.quotaFor(p, s, d) + esc(unitLabel) : '') : '하루 ' + L.quotaFor(p, s, d) + esc(unitLabel)) + ' · 지금까지 ' + pr.doneUnits + '/' + pr.totalUnits + esc(unitLabel) + ' 완료</div>';
+      h += '<div class="card-meta">' + (L.doesDay(s, d) ? '하는 날 · ' : '오늘은 원래 안 하는 날 · ') + (pulled ? '당겨온 ' + pulled + esc(unitLabel) + (L.quotaFor(p, s, d) ? ' + 원래 ' + L.quotaFor(p, s, d) + esc(unitLabel) : '') : (s.type === 'spaced' ? '새로 ' : '하루 ') + L.quotaFor(p, s, d) + esc(unitLabel) + wordsNote) + ' · 지금까지 ' + pr.doneUnits + '/' + pr.totalUnits + esc(unitLabel) + ' 완료</div>';
       h += '<div class="bar"><i style="width:' + (pr.totalUnits ? Math.round(pr.doneUnits / pr.totalUnits * 100) : 0) + '%"></i></div>';
       if (!ids.length) {
         h += '<div class="empty">' + (day.rest ? '쉬는 날이에요 💤' : (pr.doneUnits === pr.totalUnits && pr.totalUnits ? '🎉 모두 끝냈어요!' : '이 날은 할 일이 없어요')) + '</div>';
@@ -1025,7 +1040,8 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
             if (day.closed && !on) cls += ' miss';
           }
           if (on) cls += ' on';
-          h += '<button class="' + cls + '" data-act="toggle" data-id="' + esc(id) + '"><span class="box">✓</span><span>' + esc(it.label) + esc(note) + '</span></button>';
+          var lbl = s.type === 'spaced' ? it.label + ' 새 단어 외우기' + (s.words ? ' (' + s.words + '개)' : '') : it.label;
+          h += '<button class="' + cls + '" data-act="toggle" data-id="' + esc(id) + '"><span class="box">✓</span><span>' + esc(lbl) + esc(note) + '</span></button>';
         });
         h += '</div></div>';
       });
@@ -1047,7 +1063,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     if (day.status === 'future') return h;
     if (!day.closed) {
       var left = day.missed.length;
-      h += '<div class="closebox"><div class="hint">' + (day.rest ? '💤 쉬는 날이에요. 진도는 멈춰 있어요.' : day.items.length ? (left ? '남은 항목 ' + left + '개' : '🎉 오늘 할 일을 다 했어요!') : '') + '</div>' +
+      h += '<div class="closebox"><div class="hint">' + (day.rest && !day.items.length ? '💤 쉬는 날이에요. 진도는 멈춰 있어요.' : day.rest ? '💤 쉬는 날 · 복습과 영단어만 해요. ' + (day.missed.length ? '남은 항목 ' + day.missed.length + '개' : '🎉 다 했어요!') : day.items.length ? (left ? '남은 항목 ' + left + '개' : '🎉 오늘 할 일을 다 했어요!') : '') + '</div>' +
         '<div class="btnrow"><button class="bigbtn" data-act="close">오늘 마감</button></div>' +
         '<div class="hint" style="margin-top:8px">마감하면 못 한 항목은 다음 날로 넘어가요. 마감하지 않아도 날짜가 지나면 자동으로 마감돼요.</div></div>';
       return h + backupTip;
@@ -1203,7 +1219,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     var st = STATUS[day.status] || ['b-empty', ''];
     var rec = p.days[day.date] || {};
     var h = '<div class="sec detail"><h3>' + korDate(day.date) + '</h3><span class="badge ' + st[0] + '">' + st[1] + '</span>';
-    if (day.status === 'rest') h += '<p class="hint">쉬는 날에는 할 일이 없고 진도도 멈춰요.</p>';
+    if (day.rest) h += '<p class="hint">💤 쉬는 날이에요. 과목 진도는 멈추고, 복습과 영단어만 해요.</p>';
     var future = day.status === 'future' || (day.rest && day.date > t);
     if (future && !day.rest) h += '<p class="hint">지금 진도를 기준으로, 그때까지 계획대로 했을 때의 예상 할 일이에요.</p>';
     var doneSet = day.date >= t ? null : L.simulate(p, t, day.date).done;
@@ -1286,6 +1302,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     p.subjects.forEach(function (s) {
       var info = s.type === 'table'
         ? '진도표 ' + (s.rows || []).length + '일차 · 하루 ' + s.daily + '일차 · ' + (s.mode === 'B' ? '남은 항목+다음 일차' : '남은 항목이 1자리')
+        : s.type === 'spaced' ? '간격 복습형 · 총 ' + s.total + 'Day · 하루 새 ' + s.daily + 'Day' + (s.words ? ' (' + s.words + '개씩)' : '')
         : '총 ' + s.total + s.unitName + ' · 하루 ' + s.daily + s.unitName + (s.tasks && s.tasks.length ? ' · [' + s.tasks.join('] [') + ']' : '');
       if (s.periods && s.periods.length) info += ' · 기간 규칙 ' + s.periods.length + '개';
       info = wdText(s) + ' · ' + info;
@@ -1299,10 +1316,11 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         '<button class="btn" data-act="editsub" data-id="' + s.id + '">수정</button>' +
         '<button class="btn red" data-act="delsub" data-id="' + s.id + '">삭제</button></div>';
     });
-    h += '<div class="btnrow" style="justify-content:flex-start"><button class="btn pri" data-act="addsub">＋ 번호형 과목 추가</button></div>' +
+    h += '<div class="btnrow" style="justify-content:flex-start"><button class="btn pri" data-act="addsub">＋ 번호형 과목 추가</button>' +
+      '<button class="btn pri" data-act="addspaced">＋ 간격 복습형 과목 추가</button></div>' +
       '<p class="hint">하루 분량을 바꾸면 이미 마감한 날은 그대로 두고, 오늘부터의 계획이 다시 계산돼요.</p></div>';
 
-    h += '<div class="sec"><h2>💤 쉬는 날</h2><p class="hint" style="margin-top:0">쉬는 날에는 할 일이 없고 모든 과목 진도가 그대로 멈춰요 (밀리지 않아요). 이미 마감한 날은 바뀌지 않아요.</p>' +
+    h += '<div class="sec"><h2>💤 쉬는 날</h2><p class="hint" style="margin-top:0">쉬는 날에는 과목 진도가 그대로 멈춰요 (밀리지 않아요). 단, <b>복습과 영단어(간격 복습형)는 쉬는 날에도 나와요.</b> 이미 마감한 날은 바뀌지 않아요.</p>' +
       '<div class="field"><span>매주 쉬는 요일</span><div class="wkbtns">';
     for (var w = 0; w < 7; w++) h += '<button class="wkb ' + ((p.restWeekdays || []).indexOf(w) >= 0 ? 'on' : '') + '" data-act="restwd" data-w="' + w + '">' + WD[w] + '</button>';
     h += '</div></div><div class="field"><span>날짜로 지정 (하루면 끝 날짜는 비워 두세요)</span><div class="grid2">' +
@@ -1349,12 +1367,31 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
 
   /* ---------- 과목 편집 모달 ---------- */
   var draft = null;
+  function openSpacedModal() {
+    draft = { id: uid(), type: 'spaced', name: '', book: '', unitName: 'Day', total: 40, daily: 1, words: 50, spaced: [1, 3, 7], tasks: [], _new: true };
+    ui.modal = subjectModal; render();
+  }
   function openSubjectModal(s) {
     draft = s ? JSON.parse(JSON.stringify(s)) : { id: uid(), type: 'numbered', name: '', book: '', unitName: '강', total: 20, daily: 1, tasks: ['강의 듣기', '복습'], _new: true };
     ui.modal = subjectModal; render();
   }
+  function spacedModal() {
+    var s = draft;
+    return '<div class="modal"><div class="sec"><h2>' + (s._new ? '간격 복습형 과목 추가' : '간격 복습형 과목 수정') + '</h2>' +
+      '<p class="hint" style="margin-top:0">영단어처럼 새로 외운 날부터 정해진 날짜 뒤에 복습이 자동으로 나와요. 못 외운 Day는 다음 날 다시 나와요. 쉬는 날에도 나와요.</p>' +
+      '<div class="grid2"><label class="field"><span>과목 이름</span><input id="sName" value="' + esc(s.name) + '" placeholder="예: 영단어"></label>' +
+      '<label class="field"><span>교재 이름</span><input id="sBook" value="' + esc(s.book) + '" placeholder="예: 수능 영단어"></label></div>' +
+      '<div class="grid2"><label class="field"><span>총 Day 수</span><input id="sTotal" type="number" inputmode="numeric" min="1" value="' + s.total + '"></label>' +
+      '<label class="field"><span>하루 새 Day 수</span><input id="sDaily" type="number" inputmode="numeric" min="0" value="' + s.daily + '"></label></div>' +
+      '<div class="grid2"><label class="field"><span>Day당 단어 수</span><input id="sWords" type="number" inputmode="numeric" min="0" value="' + (s.words == null ? 50 : s.words) + '"></label>' +
+      '<label class="field"><span>복습 간격 (외운 날부터 며칠 뒤, 쉼표로)</span><input id="sSpaced" inputmode="numeric" value="' + esc((s.spaced || []).join(',')) + '" placeholder="1,3,7"></label></div>' +
+      weekdaysEditor(s) +
+      periodsEditor(s, 'Day') +
+      '<div class="btnrow"><button class="bigbtn ghost" data-act="cancelsub">취소</button><button class="bigbtn" data-act="savesub">저장</button></div></div></div>';
+  }
   function subjectModal() {
     var s = draft;
+    if (s.type === 'spaced') return spacedModal();
     var h = '<div class="modal"><div class="sec"><h2>' + (s._new ? '과목 추가' : '과목 수정') + '</h2>' +
       '<div class="grid2"><label class="field"><span>과목 이름</span><input id="sName" value="' + esc(s.name) + '" placeholder="예: 국어 인강"></label>' +
       '<label class="field"><span>교재/강좌 이름</span><input id="sBook" value="' + esc(s.book) + '" placeholder="예: ○○ 개념 강좌"></label></div>' +
@@ -1382,6 +1419,10 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     readPeriods();
     var sp = document.getElementById('sSpaced');
     if (sp) draft.spaced = sp.value.split(/[,\s]+/).map(Number).filter(function (n) { return n > 0; });
+    if (draft.type === 'spaced') {
+      draft.unitName = 'Day'; draft.tasks = [];
+      var ww = parseInt(g('sWords'), 10); draft.words = isNaN(ww) ? 50 : Math.max(0, ww);
+    }
     var wm = document.getElementById('sWeeklyMin');
     if (wm) { var wn = parseInt(wm.value, 10); draft.weeklyMin = isNaN(wn) ? 30 : Math.max(0, wn); }
   }
@@ -1391,7 +1432,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   function openNewPlan() {
     var p = plan(), t = today();
     np = { name: '', start: t, end: L.addDays(t, 59), subs: p.subjects.map(function (s) {
-      var u = s.type === 'table' ? '일차' : (s.unitName || '');
+      var u = s.type === 'table' ? '일차' : s.type === 'spaced' ? 'Day' : (s.unitName || '');
       return { id: s.id, name: s.name, unit: u, keep: true, carry: true, wk: s.daily, we: s.daily };
     }) };
     ui.modal = newPlanModal; render();
@@ -1646,6 +1687,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         p.name = nm; p.start = st; p.end = en; save(); runAutoClose(); toast('저장했어요'); break;
       }
       case 'addsub': openSubjectModal(null); return;
+      case 'addspaced': openSpacedModal(); return;
       case 'editsub': if (findSub(b.getAttribute('data-id')).type === 'table') { openTableModal(findSub(b.getAttribute('data-id')), null); return; }
         openSubjectModal(p.subjects.filter(function (s) { return s.id === b.getAttribute('data-id'); })[0]); return;
       case 'delsub': {

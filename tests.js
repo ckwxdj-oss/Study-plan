@@ -499,6 +499,43 @@ test('[새 B-2] 쉬는 날에도 복습은 나옴 (새 진도는 멈춤)', funct
   eq([thu.shown.kor, has(thu.reviews, 'R|kor|4|3')], [[], true], '쉬는 날: 새 진도 없음, 복습 있음');
 });
 
+/* ===== C단계: 간격 복습형 (영단어) ===== */
+function wordSub(extra) { return Object.assign({ id: 'voca', type: 'spaced', name: '영단어', unitName: 'Day', total: 40, daily: 1, words: 50, spaced: [1, 3, 7] }, extra || {}); }
+
+test('[새 10] 영단어 Day 10을 12/20에 외우면 12/21, 12/23, 12/27에 복습', function () {
+  var D20 = '2025-12-20';
+  var p = makePlan([wordSub()], D20, '2026-02-28');
+  carryUnits(p, 'voca', 9);                          // Day 1~9는 이미 외움
+  eq(unitsShown(p, D20, D20, 'voca'), [10], '12/20 새 Day 10');
+  checkAll(p, D20, D20); L.closeDay(p, D20, D20);
+  var at = function (d) { return L.dayOf(p, D20, d).reviews.filter(function (id) { return id.indexOf('R|voca|9|') === 0; }); };
+  eq(at('2025-12-21'), ['R|voca|9|1'], '12/21 (1일 뒤)');
+  eq(at('2025-12-22'), [], '12/22 없음');
+  eq(at('2025-12-23'), ['R|voca|9|3'], '12/23 (3일 뒤)');
+  eq(at('2025-12-27'), ['R|voca|9|7'], '12/27 (7일 뒤)');
+  eq(L.reviewInfo(L.simulate(p, D20, D20).subs, 'R|voca|9|1').title, '영단어 Day 10 복습 (1일 뒤)');
+});
+
+test('[새 C-1] 새 Day를 못 외우면 다음 날 같은 Day가 다시 나옴', function () {
+  var p = makePlan([wordSub()], MON, '2026-02-28');
+  L.autoClose(p, TUE);
+  eq(unitsShown(p, TUE, TUE, 'voca'), [1], '화요일에 다시 Day 1');
+  eq(Object.keys(L.simulate(p, TUE, TUE).revDue), [], '외우지 않았으니 복습도 없음');
+});
+
+test('[새 C-2] 쉬는 날에도 영단어는 나오고, 다른 과목은 멈춤', function () {
+  var p = makePlan([wordSub(), subj('kor', 40, 2)], MON, '2026-02-28');
+  p.restDays = [MON];
+  var day = L.dayOf(p, MON, MON);
+  eq([day.shown.kor, day.shown.voca.length, day.status], [[], 1, 'open'], '쉬는 날: 국어 없음, 영단어 있음');
+});
+
+test('[새 C-3] 복습 간격을 바꾸면 그대로 적용', function () {
+  var p = makePlan([wordSub({ spaced: [2, 5] })], MON, '2026-02-28');
+  checkAll(p, MON, MON); L.closeDay(p, MON, MON);
+  eq(Object.keys(L.simulate(p, MON, MON).revDue).sort(), ['R|voca|0|2', 'R|voca|0|5']);
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);
