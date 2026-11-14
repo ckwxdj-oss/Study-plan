@@ -679,13 +679,17 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       });
       data.addedMath = true; save();
     }
+    upgradeData();
+    ensureRows();
+  }
+  // 예전 버전 데이터 맞추기: '보관된 계획' → '일시정지된 계획'
+  function upgradeData() {
     data.plans.forEach(function (p) {
       if (p.archivedAt) {
         p.pauses = (p.pauses || []).concat([{ from: p.archivedAt, to: null }]);
         delete p.archivedAt; save();
       }
     });
-    ensureRows();
   }
   function save() { localStorage.setItem(testMode ? TKEY : KEY, JSON.stringify(data)); }
 
@@ -801,6 +805,14 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     });
     h += '</div>';
 
+    // 백업 알림
+    var closedN = Object.keys(p.days).filter(function (k) { return p.days[k].closed; }).length;
+    var since = daysSinceBackup();
+    var backupTip = d === t && closedN >= 7 && (since == null || since >= 14)
+      ? '<div class="notice warn" style="margin-top:20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="flex:1;min-width:200px">💾 ' +
+        (since == null ? '아직 백업한 적이 없어요.' : '마지막 백업이 ' + since + '일 전이에요.') + ' 기록이 사라지지 않게 백업해 두세요.</span>' +
+        '<button class="btn" data-act="gobackup">백업하러 가기</button></div>' : '';
+
     // 마감 영역
     if (day.status === 'future') return h;
     if (!day.closed) {
@@ -808,7 +820,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       h += '<div class="closebox"><div class="hint">' + (day.rest ? '💤 쉬는 날이에요. 진도는 멈춰 있어요.' : day.items.length ? (left ? '남은 항목 ' + left + '개' : '🎉 오늘 할 일을 다 했어요!') : '') + '</div>' +
         '<div class="btnrow"><button class="bigbtn" data-act="close">오늘 마감</button></div>' +
         '<div class="hint" style="margin-top:8px">마감하면 못 한 항목은 다음 날로 넘어가요. 마감하지 않아도 날짜가 지나면 자동으로 마감돼요.</div></div>';
-      return h;
+      return h + backupTip;
     }
     if (day.status === 'missed') {
       h += '<div class="result bad"><h3>❌ 못 한 항목</h3><ul>';
@@ -821,7 +833,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     h += '<div class="btnrow">' +
       '<button class="bigbtn ghost" data-act="edit">' + (editing ? '고치기 끝' : '체크 고치기') + '</button>' +
       (d === t ? '<button class="bigbtn ghost" data-act="reopen">마감 취소</button>' : '') + '</div>';
-    return h;
+    return h + backupTip;
   }
 
   /* ---------- 달력 / 목록 화면 ---------- */
@@ -1041,6 +1053,16 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       '<button class="toggle ' + (testMode ? 'on' : '') + '" data-act="testmode" aria-label="테스트 모드"></button></div>' +
       (testMode ? '<div class="btnrow" style="justify-content:flex-start"><button class="btn red" data-act="testreset">테스트 데이터 새로 시작 (실제 데이터 복사)</button></div>' : '') + '</div>';
 
+    var since = daysSinceBackup();
+    h += '<div class="sec"><h2>💾 백업</h2>' +
+      '<p class="hint" style="margin-top:0">기록은 GitHub가 아니라 <b>이 탭의 크롬 안</b>에만 저장돼요. 크롬 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 파일로 내보내 두세요. 카톡 「나에게 보내기」나 구글 드라이브에 올려 두면 더 안전해요.' +
+      (testMode ? ' <b>지금은 테스트 모드 데이터가 대상이에요.</b>' : '') + '</p>' +
+      '<div class="' + (since == null || since >= 14 ? 'notice warn' : 'notice') + '">' +
+      (since == null ? '아직 백업한 적이 없어요.' : '마지막 백업: ' + korDate(lastBackup()) + (since ? ' (' + since + '일 전)' : ' (오늘)')) + '</div>' +
+      '<div class="btnrow" style="justify-content:flex-start"><button class="btn pri" data-act="export">⬇️ JSON 파일로 내보내기</button>' +
+      '<label class="btn" style="display:inline-flex;align-items:center">⬆️ 백업 파일 불러오기<input type="file" accept=".json,application/json" data-act="importfile" hidden></label></div>' +
+      '<p class="hint">불러오면 지금 데이터가 모두 그 파일 내용으로 바뀌어요 (덮어쓰기).</p></div>';
+
     h += '<div class="sec"><h2>⚠️ 초기화</h2><p class="hint">' + (testMode ? '테스트 모드' : '실제') + ' 데이터를 모두 지우고 예시 과목으로 다시 시작해요.</p>' +
       '<button class="btn red" data-act="resetall">모든 데이터 지우기</button></div>';
     return h;
@@ -1120,6 +1142,34 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       if (a) { var n = parseInt(a.value, 10); x.wk = isNaN(n) ? 0 : Math.max(0, n); }
       if (b) { var m = parseInt(b.value, 10); x.we = isNaN(m) ? 0 : Math.max(0, m); }
     });
+  }
+
+  /* ---------- 백업 (JSON 파일로 내보내기 / 불러오기) ---------- */
+  var BKEY = 'studyplan.lastbackup';
+  function lastBackup() { return localStorage.getItem(BKEY + (testMode ? '.test' : '')); }
+  function daysSinceBackup() { var b = lastBackup(); return b ? L.diffDays(b, realToday()) : null; }
+  function exportJSON() {
+    var payload = { app: 'study-plan-check', version: 1, exportedAt: new Date().toISOString(), testMode: testMode, data: data };
+    var blob = new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'study-plan-backup_' + realToday() + (testMode ? '_test' : '') + '.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    localStorage.setItem(BKEY + (testMode ? '.test' : ''), realToday());
+    toast('백업 파일을 내보냈어요 (다운로드 폴더)');
+  }
+  function importJSON(text) {
+    var obj;
+    try { obj = JSON.parse(text); } catch (e) { toast('JSON 파일을 읽지 못했어요'); return; }
+    var d = obj && obj.data ? obj.data : obj;
+    if (!d || !Array.isArray(d.plans) || !d.plans.length || !d.activePlanId) { toast('이 앱의 백업 파일이 아니에요'); return; }
+    var when = obj.exportedAt ? ' (' + korDate(obj.exportedAt.slice(0, 10)) + '에 만든 백업)' : '';
+    if (!confirm('현재 데이터를 덮어씁니다.' + when + '\n지금 기록은 모두 백업 파일 내용으로 바뀌어요. 계속할까요?')) return;
+    if (testMode && !d.testToday) d.testToday = data.testToday;
+    data = d; data.addedMath = true; upgradeData(); save();
+    ui.viewDate = null; ui.editDate = null; ui.calDate = null; ui.modal = null;
+    ensureRows(); runAutoClose(); render(); toast('백업 파일을 불러왔어요');
   }
 
   /* ---------- 기간·요일별 분량 편집 (두 종류 과목 공용) ---------- */
@@ -1325,6 +1375,9 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         data.plans = data.plans.filter(function (x) { return x !== dp; }); save(); break;
       }
       case 'newplan': openNewPlan(); return;
+      case 'export': exportJSON(); break;
+      case 'gobackup': ui.tab = 'settings'; render(); setTimeout(function () {
+          var el = document.querySelector('[data-act=export]'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 50); return;
       case 'npset': {
         readNp();
         var x = np.subs[+b.getAttribute('data-i')], v = b.getAttribute('data-v');
@@ -1383,6 +1436,15 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     }
   });
   document.addEventListener('change', function (e) {
+    if (e.target.getAttribute('data-act') === 'importfile') {
+      var jf = e.target.files && e.target.files[0]; if (!jf) return;
+      var jr = new FileReader();
+      jr.onload = function () { importJSON(String(jr.result)); };
+      jr.onerror = function () { toast('파일을 읽지 못했어요'); };
+      jr.readAsText(jf, 'utf-8');
+      e.target.value = '';
+      return;
+    }
     if (e.target.getAttribute('data-act') === 'csvfile') {
       var f = e.target.files && e.target.files[0]; if (!f) return;
       var rd = new FileReader();
