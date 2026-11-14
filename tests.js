@@ -254,6 +254,39 @@ test('(예상) 종료일 뒤 예상은 마지막 기간 규칙을 이어서 씀'
   eq([f[0].byEnd, f[0].finishDate], [20, '2027-01-03']);
 });
 
+test('(통계) 달성률, 연속으로 다 해낸 날, 과목별 밀린 양', function () {
+  var p = makePlan([subj('kor', 40, 2), subj('eng', 30, 1)]);
+  p.restDays = [D3];
+  checkAll(p, D1, D1); L.closeDay(p, D1, D1);                 // D1 다 함
+  checkAll(p, D2, D2); L.closeDay(p, D2, D2);                 // D2 다 함
+  // D3 쉬는 날 (연속 기록을 끊지 않음)
+  L.autoClose(p, D4);
+  var day4 = L.dayOf(p, D4, D4);                              // D4 영어만 못 함
+  day4.items.forEach(function (id) { if (id.indexOf('eng|') !== 0) L.setCheck(p, D4, id, true); });
+  L.closeDay(p, D4, D4);
+  var st = L.stats(p, D5);
+  eq([st.days, st.perfectDays, st.items, st.doneItems], [3, 2, 9, 8], '전체');
+  eq([st.streak, st.bestStreak], [0, 2], '연속 기록');
+  eq([st.subjects[0].missedDays, st.subjects[0].rate], [0, 1], '국어');
+  eq([st.subjects[1].missedDays, st.subjects[1].missedItems, st.subjects[1].backlog], [1, 1, 1], '영어 (오늘 밀려 있는 1개)');
+  checkAll(p, D5, D5); L.closeDay(p, D5, D5);
+  eq(L.stats(p, '2026-12-25').streak, 1, '다시 연속 1일');
+});
+
+test('(새 계획) 진도 이어받기 / 처음부터', function () {
+  var old = makePlan([subj('kor', 40, 2, ['강의 듣기', '복습']), subj('voca', 40, 1)]);
+  checkAll(old, D1, D1); L.closeDay(old, D1, D1);             // 국어 1·2강, 영단어 Day 1
+  L.setCheck(old, D2, L.itemId('kor', 2, 0), true);           // 오늘 국어 3강 강의만
+  var np = L.newPlanFrom(old, D2, { id: 'n', name: '봄', start: D2, end: '2027-03-31',
+    subjects: [{ id: 'kor', keep: true, carry: true }, { id: 'voca', keep: true, carry: false }] });
+  eq(np.subjects.length, 2);
+  eq(shownOf(np, D2, D2, 'kor'), ['3:1', '4:0', '4:1'], '국어 이어받기: 3강 복습부터');
+  var vid = np.subjects[1].id;
+  eq(unitsShown(np, D2, D2, vid), [1], '영단어는 처음부터');
+  var np2 = L.newPlanFrom(old, D2, { id: 'n2', name: 'x', start: D2, end: '2027-03-31', subjects: [{ id: 'kor', keep: false }] });
+  eq(np2.subjects.length, 0, '안 가져간 과목은 빠짐');
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);
