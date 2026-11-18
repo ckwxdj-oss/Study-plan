@@ -216,6 +216,21 @@ button{cursor:pointer;touch-action:manipulation}
 .minrow{display:grid;grid-template-columns:1fr 120px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
 .minrow input{min-height:50px;text-align:center;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
 
+/* 순공시간 타이머 */
+.timer{display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between;background:var(--card);border-radius:20px;padding:16px 20px;margin:4px 0 14px;border:1px solid var(--line);box-shadow:var(--shadow)}
+.timer .tl{display:flex;flex-direction:column}
+.timer .tk{font-weight:700;color:var(--sub);font-size:16px}
+.timer .tv{font-size:46px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:0}
+.timer.on .tv{color:var(--green)}
+.timer .bigbtn{min-width:180px}
+.timer.on .bigbtn{background:var(--red);border-color:var(--red);color:#fff}
+.tbar{position:sticky;top:0;z-index:45;display:flex;align-items:center;justify-content:center;gap:14px;padding:8px 16px;background:var(--green);color:#fff;font-weight:700}
+.tbar b{font-size:22px;font-variant-numeric:tabular-nums}
+.tbar button{min-height:44px;border-radius:999px;border:0;padding:4px 18px;background:#fff;color:var(--green);font-weight:800}
+.cell .st{font-size:12px;font-weight:700;color:var(--sub);font-variant-numeric:tabular-nums}
+.studyrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 14px;border-radius:14px;background:var(--bg)}
+.studyrow input{width:76px;min-height:46px;text-align:center;border-radius:10px;border:1px solid var(--line);background:var(--card)}
+
 /* 모달 */
 .modal{position:fixed;inset:0;background:rgba(10,15,25,.5);display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:50}
 .modal .sec{width:100%;max-width:640px;margin:0}
@@ -889,6 +904,43 @@ var StudyLogic = (function () {
     }).filter(Boolean);
   }
 
+  /* ---------- 순공시간 타이머 ----------
+     1초씩 세지 않고 "시작한 시각"만 기억 → 화면이 꺼지거나 앱을 닫아도 정확함.
+     study = { running: {start:ms} | null, days: { 'YYYY-MM-DD': 초 } }
+     fixedDate 를 주면(테스트 모드) 그 날짜에 모두 기록, 아니면 실제 자정 기준으로 날짜별로 나눔 */
+  function localDate(ms) { var d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function splitByDay(a, b) {
+    var out = {};
+    while (a < b) {
+      var d = new Date(a), next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+      var e = Math.min(b, next), k = localDate(a);
+      out[k] = (out[k] || 0) + (e - a) / 1000;
+      a = e;
+    }
+    Object.keys(out).forEach(function (k) { out[k] = Math.round(out[k]); });
+    return out;
+  }
+  function studyPieces(study, now, fixedDate) {
+    var r = study.running;
+    if (!r || now <= r.start) return {};
+    if (fixedDate) { var o = {}; o[fixedDate] = Math.round((now - r.start) / 1000); return o; }
+    return splitByDay(r.start, now);
+  }
+  function startTimer(study, now) { if (!study.running) study.running = { start: now }; }
+  // 멈춤: 지금까지 잰 시간을 날짜별로 더하고 타이머를 끔 (end 를 주면 그 시각까지만)
+  function stopTimer(study, now, fixedDate) {
+    var pieces = studyPieces(study, now, fixedDate);
+    study.days = study.days || {};
+    Object.keys(pieces).forEach(function (k) { study.days[k] = (study.days[k] || 0) + pieces[k]; });
+    study.running = null;
+    return pieces;
+  }
+  // 그 날짜의 순공시간(초): 저장된 기록 + 지금 돌아가는 중인 부분
+  function studySeconds(study, date, now, fixedDate) {
+    var base = (study.days && study.days[date]) || 0;
+    return base + (studyPieces(study, now, fixedDate)[date] || 0);
+  }
+
   /* ---------- 마감 관련 동작 ---------- */
   function autoClose(plan, today) {
     return simulate(plan, today, addDays(today, -1), { autoClose: true }).closedCount;
@@ -949,7 +1001,7 @@ var StudyLogic = (function () {
     pad: pad, parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, weekday: weekday, diffDays: diffDays,
     itemId: itemId, unitsOf: unitsOf, parseCSV: parseCSV, itemsFor: itemsFor, rowsFromCSV: rowsFromCSV, quotaFor: quotaFor, periodFor: periodFor, isRestDay: isRestDay, isPaused: isPaused, switchPlan: switchPlan, doesDay: doesDay, nextDoDay: nextDoDay, pull: pull, unpull: unpull, pickItems: pickItems,
     simulate: simulate, autoClose: autoClose, closeDay: closeDay, reopenDay: reopenDay, setCheck: setCheck,
-    dayOf: dayOf, progress: progress, reviewInfo: reviewInfo, groupReviews: groupReviews, revMinutes: revMinutes, reviewMinutes: reviewMinutes, isFiveSkip: isFiveSkip, forecast: forecast, stats: stats, newPlanFrom: newPlanFrom
+    dayOf: dayOf, progress: progress, localDate: localDate, splitByDay: splitByDay, startTimer: startTimer, stopTimer: stopTimer, studySeconds: studySeconds, reviewInfo: reviewInfo, groupReviews: groupReviews, revMinutes: revMinutes, reviewMinutes: reviewMinutes, isFiveSkip: isFiveSkip, forecast: forecast, stats: stats, newPlanFrom: newPlanFrom
   };
 })();
 if (typeof module !== 'undefined') module.exports = StudyLogic;
@@ -1077,6 +1129,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       save();
     }
     if (testMode && !data.testToday) data.testToday = realToday();
+    data.study = data.study || { running: null, days: {} };
     if (!data.addedMath) {
       data.plans.forEach(function (p) {
         if (!p.subjects.some(function (s) { return s.type === 'table'; })) p.subjects.unshift(mathSubject());
@@ -1108,6 +1161,26 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     ui.lastToday = today();
   }
 
+  /* ---------- 순공시간 ---------- */
+  // 테스트 모드에서는 '오늘'이 가짜 날짜라서, 잰 시간을 그 날짜에 모두 기록
+  function timerDate() { return testMode ? today() : null; }
+  function studySec(date) { return L.studySeconds(data.study, date, Date.now(), timerDate()); }
+  function fmtHMS(sec) { sec = Math.max(0, Math.floor(sec)); var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60; return L.pad(h) + ':' + L.pad(m) + ':' + L.pad(x); }
+  function fmtHM(sec) { var m = Math.round(sec / 60); return m >= 60 ? Math.floor(m / 60) + '시간' + (m % 60 ? ' ' + m % 60 + '분' : '') : m + '분'; }
+  function fmtShort(sec) { var m = Math.round(sec / 60); return Math.floor(m / 60) + ':' + L.pad(m % 60); }
+  function timerCard() {
+    var on = !!data.study.running;
+    return '<div class="timer' + (on ? ' on' : '') + '"><div class="tl"><span class="tk">⏱ 오늘 순공시간' + (on ? ' · 공부 중' : '') + '</span>' +
+      '<span class="tv" data-timer>' + fmtHMS(studySec(today())) + '</span></div>' +
+      '<button class="bigbtn" data-act="' + (on ? 'timerstop' : 'timerstart') + '">' + (on ? '⏸ 멈춤' : '▶ 시작') + '</button></div>';
+  }
+  // 1초마다 숫자만 바꿈 (화면 전체를 다시 그리지 않음)
+  setInterval(function () {
+    if (!data || !data.study || !data.study.running) return;
+    var v = fmtHMS(studySec(today()));
+    document.querySelectorAll('[data-timer]').forEach(function (e) { e.textContent = v; });
+  }, 1000);
+
   /* ---------- 렌더링 ---------- */
   function render() {
     var app = document.getElementById('app');
@@ -1115,6 +1188,9 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     if (testMode) {
       h += '<div class="testbar">🧪 테스트 모드 · 오늘을 <input type="date" data-act="testdate" value="' + data.testToday + '"> 로 가정' +
         '<button data-act="nextday">다음 날로 ▶</button></div>';
+    }
+    if (data.study.running && !(ui.tab === 'today' && !ui.viewDate)) {
+      h += '<div class="tbar">⏱ 공부 중 <b data-timer>' + fmtHMS(studySec(today())) + '</b><button data-act="timerstop">⏸ 멈춤</button></div>';
     }
     h += '<div class="wrap">' + (ui.tab === 'today' ? renderToday() : ui.tab === 'calendar' ? renderCalendar() : ui.tab === 'stats' ? renderStats() : renderSettings()) + '</div>';
     h += '<nav class="tabs">' +
@@ -1145,6 +1221,8 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       '<h1>' + korDate(d) + '<span class="sub">' + (d === t ? '오늘' : (d < t ? L.diffDays(d, t) + '일 전' : L.diffDays(t, d) + '일 후')) + ' · ' + esc(p.name) + '</span></h1>' +
       '<button class="navbtn" data-act="next" aria-label="다음 날">›</button></div>';
     if (d !== t) h += '<button class="todaybtn" data-act="gotoday">오늘로 돌아가기</button>';
+    if (d === t) h += timerCard();
+    else if (d < t && studySec(d)) h += '<p class="hint" style="text-align:center;margin:0 0 10px">⏱ 이 날 순공시간 <b>' + fmtHM(studySec(d)) + '</b></p>';
 
     if (d < p.start) return h + '<div class="notice">계획 시작 전이에요. 계획은 ' + korDate(p.start) + '에 시작해요.</div>';
     if (d > p.end) return h + '<div class="notice">계획 기간(' + korDate(p.end) + '까지)이 끝났어요. 설정에서 종료일을 바꿀 수 있어요.</div>';
@@ -1357,7 +1435,8 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         var day = byDate[d], n = +d.slice(8);
         if (!day) { h += '<div class="cell out"><span class="n">' + n + '</span></div>'; continue; }
         h += '<button class="cell s-' + day.status + (d === t ? ' today' : '') + (d === sel ? ' sel' : '') + '" data-act="calpick" data-date="' + d + '">' +
-          '<span class="n">' + n + '</span><span class="i">' + (ICON[day.status] || '') + '</span></button>';
+          '<span class="n">' + n + '</span><span class="i">' + (ICON[day.status] || '') + '</span>' +
+          (studySec(d) >= 60 ? '<span class="st">' + fmtShort(studySec(d)) + '</span>' : '') + '</button>';
       }
       h += '</div></div>';
       var y = +m.slice(0, 4), mo = +m.slice(5) + 1;
@@ -1378,6 +1457,17 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       '<div class="tile"><div class="k">전체 달성률</div><div class="v">' + pct(st.rate) + '</div><div class="d">해낸 항목 ' + st.doneItems + ' / ' + st.items + '개</div></div>' +
       '<div class="tile"><div class="k">다 해낸 날</div><div class="v">' + st.perfectDays + '<small style="font-size:22px"> / ' + st.days + '일</small></div><div class="d">' + (st.dayRate == null ? '쉬는 날은 빼고 셌어요' : '마감한 날의 ' + pct(st.dayRate)) + '</div></div>' +
       '<div class="tile"><div class="k">연속으로 다 해낸 날</div><div class="v">🔥 ' + st.streak + '일</div><div class="d">최고 기록 ' + st.bestStreak + '일 · 쉬는 날은 연속을 안 끊어요</div></div></div>';
+
+    // 순공시간 요약
+    var sd = Object.keys(data.study.days || {}).filter(function (k) { return data.study.days[k] > 0; });
+    var tsec = studySec(t), wsec = 0;
+    for (var wi = 0; wi < 7; wi++) wsec += studySec(L.addDays(t, -wi));
+    var allSec = sd.reduce(function (a, k) { return a + (k === t ? studySec(k) : data.study.days[k]); }, 0) + (sd.indexOf(t) < 0 ? tsec : 0);
+    var nDays = sd.length + (sd.indexOf(t) < 0 && tsec > 0 ? 1 : 0);
+    h += '<div class="tiles">' +
+      '<div class="tile"><div class="k">⏱ 오늘 순공시간</div><div class="v" data-timer-hm>' + fmtHM(tsec) + '</div><div class="d">' + (data.study.running ? '지금 재는 중' : '오늘 화면에서 ▶ 시작') + '</div></div>' +
+      '<div class="tile"><div class="k">최근 7일</div><div class="v">' + fmtHM(wsec) + '</div><div class="d">하루 평균 ' + fmtHM(wsec / 7) + '</div></div>' +
+      '<div class="tile"><div class="k">기록한 날 평균</div><div class="v">' + (nDays ? fmtHM(allSec / nDays) : '—') + '</div><div class="d">' + nDays + '일 · 총 ' + fmtHM(allSec) + '</div></div></div>';
 
     h += '<div class="sec"><h2>📚 과목별 달성률</h2>';
     st.subjects.forEach(function (q) {
@@ -1466,6 +1556,14 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     }
     if (!day.items.length && !day.rest) h += '<p class="hint">이 날은 할 일이 없어요.</p>';
     if (rec.memo) h += '<div class="memo">📝 ' + esc(rec.memo) + '</div>';
+    if (day.date <= t) {
+      var ss = studySec(day.date), running = data.study.running && day.date === t;
+      h += '<div class="studyrow"><span>⏱ 순공시간 <b>' + fmtHM(ss) + '</b></span>' +
+        (running ? '<span class="hint">(타이머가 돌아가는 중이라 지금은 고칠 수 없어요)</span>'
+          : '<span class="hint">고치기:</span><input type="number" inputmode="numeric" min="0" max="23" id="stH" value="' + Math.floor(Math.round(ss / 60) / 60) + '">시간' +
+            '<input type="number" inputmode="numeric" min="0" max="59" id="stM" value="' + Math.round(ss / 60) % 60 + '">분' +
+            '<button class="btn" data-act="studyset" data-date="' + day.date + '">저장</button>') + '</div>';
+    }
     var restBtn = '';
     if (day.date >= t && !day.closed) {
       var listed = (p.restDays || []).indexOf(day.date) >= 0;
@@ -1889,6 +1987,26 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         save(); toast('복습 시간을 저장했어요'); break;
       }
       case 'resetrevmin': delete p.revMin; save(); toast('기본값으로 되돌렸어요'); break;
+      case 'timerstart':
+        L.startTimer(data.study, Date.now()); save(); toast('⏱ 공부 시작! 화면을 꺼도 시간은 계속 재져요'); break;
+      case 'timerstop': {
+        var got = L.stopTimer(data.study, Date.now(), timerDate()); save();
+        var sum = Object.keys(got).reduce(function (a, k) { return a + got[k]; }, 0);
+        toast('⏸ ' + fmtHM(sum) + ' 기록했어요 · 오늘 순공 ' + fmtHM(studySec(today()))); break;
+      }
+      case 'studyset': {
+        var sd = b.getAttribute('data-date');
+        var hh = parseInt(document.getElementById('stH').value, 10) || 0, mm = parseInt(document.getElementById('stM').value, 10) || 0;
+        data.study.days[sd] = Math.max(0, Math.min(24 * 3600, hh * 3600 + mm * 60)); save();
+        toast(korDate(sd) + ' 순공시간을 ' + fmtHM(data.study.days[sd]) + '으로 고쳤어요'); break;
+      }
+      case 'longkeep': ui.longAsked = true; ui.modal = null; break;
+      case 'longall': L.stopTimer(data.study, Date.now(), timerDate()); save(); ui.modal = null; toast('지금까지 모두 기록하고 멈췄어요'); break;
+      case 'longseen': {
+        var ls = ui.longSeen || Date.now();
+        L.stopTimer(data.study, Math.max(data.study.running.start, ls), timerDate()); save(); ui.modal = null;
+        toast('마지막으로 앱을 본 때까지만 기록했어요'); break;
+      }
       case 'theme': {
         var tv = b.getAttribute('data-v');
         document.documentElement.setAttribute('data-theme', tv);
@@ -2091,6 +2209,31 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   });
 
   // 앱을 켜 둔 채 날짜가 바뀐 경우
+  var LSKEY = 'studyplan.lastseen';
+  function markSeen() { try { localStorage.setItem(LSKEY, String(Date.now())); } catch (e) {} }
+  function longModal() {
+    var r = data.study.running, ls = ui.longSeen || Date.now();
+    var hrs = Math.floor((Date.now() - r.start) / 3600000);
+    var seen = new Date(Math.max(r.start, ls));
+    return '<div class="modal"><div class="sec"><h2>⏱ 타이머가 ' + hrs + '시간 넘게 켜져 있어요</h2>' +
+      '<p>혹시 멈추는 걸 깜빡했나요? 정말 계속 공부 중이었다면 「계속 재기」를 눌러 주세요.</p>' +
+      '<div class="btnrow" style="flex-direction:column;align-items:stretch">' +
+      '<button class="bigbtn ghost" data-act="longseen">마지막으로 앱을 본 때(' + L.pad(seen.getHours()) + ':' + L.pad(seen.getMinutes()) + ')까지만 기록</button>' +
+      '<button class="bigbtn ghost" data-act="longall">지금까지 모두 기록하고 멈춤</button>' +
+      '<button class="bigbtn" data-act="longkeep">계속 재기 (공부 중이에요)</button></div>' +
+      '<p class="hint">기록한 시간은 달력에서 날짜를 눌러 고칠 수 있어요.</p></div></div>';
+  }
+  function checkLongTimer() {
+    var r = data && data.study && data.study.running;
+    if (r && !ui.longAsked && !ui.modal && Date.now() - r.start > 4 * 3600000) {
+      ui.longSeen = +localStorage.getItem(LSKEY) || Date.now();   // 덮어쓰기 전에 기억
+      ui.modal = longModal; render();
+    }
+  }
+  setInterval(function () { if (!document.hidden) markSeen(); }, 30000);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) markSeen(); else checkLongTimer();
+  });
   function checkDateChange() { if (ui.lastToday !== today()) { runAutoClose(); ui.viewDate = null; render(); } }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) checkDateChange(); });
   setInterval(checkDateChange, 60000);
@@ -2139,7 +2282,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   }
   setThemeColor();
 
-  load(); runAutoClose(); render();
+  load(); runAutoClose(); render(); checkLongTimer(); markSeen();
 })();
 </script>
 </body>

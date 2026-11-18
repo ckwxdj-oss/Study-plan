@@ -594,6 +594,40 @@ test('[새 계획] 요일·복습·5단계·간격 복습형·복습 시간 설�
   eq(has(L.dayOf(np, WED, '2025-12-17').reviews, 'F|' + m.id + '|0|2'), true, '수학 5단계 2차');
 });
 
+/* ===== 순공시간 타이머 ===== */
+function at(y, m, d, h, mi) { return new Date(y, m - 1, d, h, mi || 0).getTime(); }   // 기기 시간대 기준
+test('[타이머] 시작→멈춤하면 그날 순공시간에 더해지고, 여러 번 재면 합쳐짐', function () {
+  var st = { running: null, days: {} };
+  L.startTimer(st, at(2025, 12, 1, 9));
+  eq(L.studySeconds(st, '2025-12-01', at(2025, 12, 1, 9, 30)), 1800, '돌아가는 중에도 30분');
+  L.stopTimer(st, at(2025, 12, 1, 10, 15));
+  L.startTimer(st, at(2025, 12, 1, 14));
+  L.stopTimer(st, at(2025, 12, 1, 15));
+  eq(st.days, { '2025-12-01': 8100 }, '1시간 15분 + 1시간 = 2시간 15분');
+  eq(st.running, null, '멈춘 상태');
+  eq(L.studySeconds(st, '2025-12-02', at(2025, 12, 2, 8)), 0, '다음 날은 0부터');
+});
+test('[타이머] 밤 12시를 넘기면 날짜별로 나눠서 기록', function () {
+  var st = { running: null, days: {} };
+  L.startTimer(st, at(2025, 12, 1, 23));
+  eq(L.studySeconds(st, '2025-12-02', at(2025, 12, 2, 0, 30)), 1800, '진행 중: 새 날짜엔 30분');
+  L.stopTimer(st, at(2025, 12, 2, 1));
+  eq(st.days, { '2025-12-01': 3600, '2025-12-02': 3600 });
+});
+test('[타이머] 화면이 꺼져 있던 시간도 정확 (시작 시각 기준)', function () {
+  var st = { running: null, days: {} };
+  L.startTimer(st, at(2025, 12, 1, 9));
+  L.startTimer(st, at(2025, 12, 1, 9, 10));                 // 이미 돌아가면 시작 시각 그대로
+  L.stopTimer(st, at(2025, 12, 1, 12));
+  eq(st.days['2025-12-01'], 10800, '3시간');
+});
+test('[타이머] 테스트 모드: 정한 날짜에 모두 기록', function () {
+  var st = { running: null, days: {} };
+  L.startTimer(st, at(2025, 12, 1, 23));
+  L.stopTimer(st, at(2025, 12, 2, 1), '2026-11-20');
+  eq(st.days, { '2026-11-20': 7200 });
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);
