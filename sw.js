@@ -7,7 +7,7 @@
 //  · 아이콘 같은 나머지 파일은 "저장본 먼저".
 //  · 체크 기록은 원래부터 기기(localStorage)에 저장되므로 오프라인에서도 그대로 쓸 수 있다.
 
-const CACHE = 'studyplan-v1';
+const CACHE = 'studyplan-v2';
 const SHELL = [
   './',
   './index.html',
@@ -86,4 +86,25 @@ self.addEventListener('fetch', (event) => {
       return res;
     }))
   );
+});
+
+// 공부 중 알림을 눌렀을 때
+//  · 「⏸ 멈춤」: 누른 시각(at)을 앱에 전달 → 앱이 그 시각까지 기록하고 멈춤.
+//    앱이 꺼져 있으면 앱을 열면서 주소에 ?timer=stop&at=시각 을 붙여 전달.
+//  · 알림 본문 / 「앱 열기」: 앱을 앞으로 가져오거나 새로 엶.
+self.addEventListener('notificationclick', (event) => {
+  const note = event.notification;
+  const at = Date.now();
+  const stop = event.action === 'stop';
+  if (stop) note.close();   // 그냥 눌러서 앱을 열 때는 타이머가 도는 중이니 알림을 그대로 둠
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const client = wins[0];
+    if (client) {
+      if (stop) client.postMessage({ type: 'timer-stop', at });
+      try { await client.focus(); } catch (e) { /* 포커스가 안 되면 그냥 둠 */ }
+      return;
+    }
+    await self.clients.openWindow(stop ? './?timer=stop&at=' + at : './');
+  })());
 });

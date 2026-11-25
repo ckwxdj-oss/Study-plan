@@ -1174,6 +1174,67 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       '<span class="tv" data-timer>' + fmtHMS(studySec(today())) + '</span></div>' +
       '<button class="bigbtn" data-act="' + (on ? 'timerstop' : 'timerstart') + '">' + (on ? '⏸ 멈춤' : '▶ 시작') + '</button></div>';
   }
+  /* ---------- 공부 중 알림 (알림창에 타이머 표시) ----------
+     웹 알림은 1초씩 올라가는 숫자를 못 보여줘서, "시작 시각 + 몇 분째"를 적고
+     앱이 살아 있는 동안 1분마다 고쳐 씀. 알림의 「⏸ 멈춤」은 서비스 워커(sw.js)가 앱에 전달. */
+  var NKEY = 'studyplan.notify', NTAG = 'study-timer';
+  function notifyOn() { try { return localStorage.getItem(NKEY) !== '0'; } catch (e) { return true; } }
+  function canNotify() { return 'Notification' in window && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol); }
+  function swReg() { return navigator.serviceWorker.getRegistration().then(function (r) { return r || navigator.serviceWorker.ready; }); }
+  function hm(ms) { var d = new Date(ms); return L.pad(d.getHours()) + ':' + L.pad(d.getMinutes()); }
+  function showTimerNote() {
+    if (!canNotify() || !notifyOn() || Notification.permission !== 'granted' || !data.study.running) return;
+    var st = data.study.running.start, mins = Math.max(0, Math.floor((Date.now() - st) / 60000));
+    swReg().then(function (reg) {
+      return reg.showNotification('⏱ 공부 중 · ' + (mins < 1 ? '방금 시작' : fmtHM(mins * 60) + '째'), {
+        body: hm(st) + ' 시작 · 오늘 순공 ' + fmtHM(studySec(today())) + '\n끝났으면 「⏸ 멈춤」을 눌러 주세요',
+        tag: NTAG, renotify: false, silent: true, requireInteraction: true,
+        icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { start: st },
+        actions: [{ action: 'stop', title: '⏸ 멈춤' }, { action: 'open', title: '앱 열기' }]
+      });
+    }).catch(function () {});
+  }
+  function closeTimerNote() {
+    if (!canNotify()) return;
+    swReg().then(function (reg) { return reg.getNotifications({ tag: NTAG }); })
+      .then(function (ns) { (ns || []).forEach(function (n) { n.close(); }); }).catch(function () {});
+  }
+  // 알림에서 「⏸ 멈춤」을 눌렀을 때: 누른 시각(at)까지 기록
+  function stopFromNote(at) {
+    if (!data.study.running) { closeTimerNote(); return; }
+    var end = Math.max(data.study.running.start, Math.min(Date.now(), +at || Date.now()));
+    var got = L.stopTimer(data.study, end, timerDate()); save(); closeTimerNote();
+    var sum = Object.keys(got).reduce(function (a, k) { return a + got[k]; }, 0);
+    ui.modal = null; render();
+    toast('⏸ 알림에서 멈췄어요 · ' + fmtHM(sum) + ' 기록 · 오늘 순공 ' + fmtHM(studySec(today())));
+  }
+  function startNote() {
+    if (!canNotify() || !notifyOn()) return;
+    if (Notification.permission === 'granted') return showTimerNote();
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(function (r) {
+        if (r === 'granted') showTimerNote();
+        else toast('알림을 허용하지 않아서 알림창에는 안 보여요 (설정에서 다시 켤 수 있어요)');
+      });
+    }
+  }
+  function notifyHTML() {
+    var h = '<div class="switch"><div><b>공부 중 알림</b><br><span class="hint">▶ 시작을 누르면 알림창에 「⏱ 공부 중 · ○분째」가 떠 있어요. 알림에서 바로 「⏸ 멈춤」도 돼요.</span></div>' +
+      '<button class="toggle ' + (notifyOn() ? 'on' : '') + '" data-act="notifytoggle" aria-label="공부 중 알림"></button></div>';
+    if (!canNotify()) return h + '<p class="hint" style="margin:6px 0 0">이 화면에서는 알림을 쓸 수 없어요. GitHub Pages 주소(또는 설치한 앱)로 열어 주세요.</p>';
+    var perm = Notification.permission;
+    if (perm === 'denied') h += '<p class="hint" style="margin:6px 0 0;color:var(--red)">알림이 차단돼 있어요. 크롬 주소창 왼쪽 아이콘(또는 ⋮ → 설정 → 사이트 설정 → 알림)에서 이 사이트의 알림을 「허용」으로 바꿔 주세요.</p>';
+    else if (perm === 'default') h += '<div class="btnrow" style="justify-content:flex-start"><button class="btn" data-act="notifyask">🔔 알림 허용하기</button></div>';
+    else h += '<p class="hint" style="margin:6px 0 0">✅ 알림 허용됨. 숫자는 1분마다 바뀌고, 앱을 오래 닫아 두면 갱신이 멈출 수 있어요 (시작 시각은 그대로 보여요).</p>';
+    return h;
+  }
+  if (canNotify()) {
+    navigator.serviceWorker.addEventListener('message', function (e) {
+      if (e.data && e.data.type === 'timer-stop') stopFromNote(e.data.at);
+    });
+  }
+  setInterval(function () { if (data && data.study && data.study.running) showTimerNote(); }, 60000);
+
   // 1초마다 숫자만 바꿈 (화면 전체를 다시 그리지 않음)
   setInterval(function () {
     if (!data || !data.study || !data.study.running) return;
@@ -1595,6 +1656,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     var p = plan();
     var h = '';
     h += '<div class="sec"><h2>📲 앱으로 설치</h2>' + installHTML() + '</div>';
+    h += '<div class="sec"><h2>🔔 알림</h2>' + notifyHTML() + '</div>';
     var th = document.documentElement.getAttribute('data-theme');
     h += '<div class="sec"><h2>🎨 화면 디자인</h2>' +
       [['samsung', '삼성 스타일', '흰 바탕, 검정 글씨, 검정 알약 모양 버튼'],
@@ -1988,9 +2050,9 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
       }
       case 'resetrevmin': delete p.revMin; save(); toast('기본값으로 되돌렸어요'); break;
       case 'timerstart':
-        L.startTimer(data.study, Date.now()); save(); toast('⏱ 공부 시작! 화면을 꺼도 시간은 계속 재져요'); break;
+        L.startTimer(data.study, Date.now()); save(); startNote(); toast('⏱ 공부 시작! 화면을 꺼도 시간은 계속 재져요'); break;
       case 'timerstop': {
-        var got = L.stopTimer(data.study, Date.now(), timerDate()); save();
+        var got = L.stopTimer(data.study, Date.now(), timerDate()); save(); closeTimerNote();
         var sum = Object.keys(got).reduce(function (a, k) { return a + got[k]; }, 0);
         toast('⏸ ' + fmtHM(sum) + ' 기록했어요 · 오늘 순공 ' + fmtHM(studySec(today()))); break;
       }
@@ -2001,12 +2063,21 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
         toast(korDate(sd) + ' 순공시간을 ' + fmtHM(data.study.days[sd]) + '으로 고쳤어요'); break;
       }
       case 'longkeep': ui.longAsked = true; ui.modal = null; break;
-      case 'longall': L.stopTimer(data.study, Date.now(), timerDate()); save(); ui.modal = null; toast('지금까지 모두 기록하고 멈췄어요'); break;
+      case 'longall': L.stopTimer(data.study, Date.now(), timerDate()); save(); closeTimerNote(); ui.modal = null; toast('지금까지 모두 기록하고 멈췄어요'); break;
       case 'longseen': {
         var ls = ui.longSeen || Date.now();
-        L.stopTimer(data.study, Math.max(data.study.running.start, ls), timerDate()); save(); ui.modal = null;
+        L.stopTimer(data.study, Math.max(data.study.running.start, ls), timerDate()); save(); closeTimerNote(); ui.modal = null;
         toast('마지막으로 앱을 본 때까지만 기록했어요'); break;
       }
+      case 'notifytoggle': {
+        var on2 = !notifyOn();
+        try { localStorage.setItem(NKEY, on2 ? '1' : '0'); } catch (e3) {}
+        if (on2) { if (data.study.running) startNote(); } else closeTimerNote();
+        toast(on2 ? '공부 중 알림을 켰어요' : '공부 중 알림을 껐어요'); break;
+      }
+      case 'notifyask':
+        Notification.requestPermission().then(function (r) { if (r === 'granted') showTimerNote(); render(); });
+        return;
       case 'theme': {
         var tv = b.getAttribute('data-v');
         document.documentElement.setAttribute('data-theme', tv);
@@ -2232,7 +2303,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   }
   setInterval(function () { if (!document.hidden) markSeen(); }, 30000);
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) markSeen(); else checkLongTimer();
+    if (document.hidden) { markSeen(); if (data.study.running) showTimerNote(); } else checkLongTimer();
   });
   function checkDateChange() { if (ui.lastToday !== today()) { runAutoClose(); ui.viewDate = null; render(); } }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) checkDateChange(); });
@@ -2282,7 +2353,13 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
   }
   setThemeColor();
 
-  load(); runAutoClose(); render(); checkLongTimer(); markSeen();
+  load(); runAutoClose(); render();
+  (function () {
+    var q = new URLSearchParams(location.search);
+    if (q.get('timer') === 'stop') { stopFromNote(q.get('at')); history.replaceState(null, '', location.pathname); }
+  })();
+  checkLongTimer(); markSeen();
+  if (data.study.running) showTimerNote(); else closeTimerNote();
 })();
 </script>
 </body>
