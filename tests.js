@@ -628,6 +628,78 @@ test('[타이머] 테스트 모드: 정한 날짜에 모두 기록', function ()
   eq(st.days, { '2026-11-20': 7200 });
 });
 
+/* ===== 🏃 만회 ===== */
+function catchUnits(p, today, date, sid) {
+  var c = (L.dayOf(p, today, date).catchup || {})[sid] || [], out = [];
+  c.forEach(function (id) { var u = +id.split('|')[1] + 1; if (out.indexOf(u) < 0) out.push(u); });
+  return out;
+}
+test('[만회 1] 1강만 들은 다음 날 2·3강을 다 들으면 만회로 4강이 나옴', function () {
+  var p = makePlan([subj('math', 30, 2)]);
+  check(p, D1, 'math', 1); L.closeDay(p, D1, D1);              // 1일차: 1강만
+  eq(unitsShown(p, D2, D2, 'math'), [2, 3], '2일차: 2·3강');
+  eq(catchUnits(p, D2, D2, 'math'), [], '다 하기 전에는 만회 없음');
+  check(p, D2, 'math', 2);
+  eq(catchUnits(p, D2, D2, 'math'), [], '하나만 해도 아직 없음');
+  check(p, D2, 'math', 3);
+  eq(catchUnits(p, D2, D2, 'math'), [4], '2·3강을 다 하면 4강 만회');
+  eq(L.dayOf(p, D2, D2).gap.math, 1, '원래 계획까지 1강');
+});
+test('[만회 2] 만회까지 하면 다음 날 원래 계획대로 / 안 하면 기존처럼', function () {
+  var p = makePlan([subj('math', 30, 2)]);
+  check(p, D1, 'math', 1); L.closeDay(p, D1, D1);
+  check(p, D2, 'math', 2); check(p, D2, 'math', 3);
+  var q = JSON.parse(JSON.stringify(p));
+  check(p, D2, 'math', 4);                                      // 만회까지 함
+  eq(catchUnits(p, D2, D2, 'math'), [4], '한 만회는 그대로 보임 (더 이상 새 만회는 없음)');
+  eq(L.dayOf(p, D2, D2).gap.math, 0, '원래 계획 따라잡음');
+  L.closeDay(p, D2, D2);
+  eq(L.dayOf(p, D3, D2).status, 'done', '2일차 초록 체크');
+  eq(unitsShown(p, D3, D3, 'math'), [5, 6], '3일차: 원래 계획대로 5·6강');
+  L.closeDay(q, D2, D2);                                        // 만회 안 함
+  eq(L.dayOf(q, D3, D2).status, 'done', '만회는 선택: 안 해도 초록 체크');
+  eq(unitsShown(q, D3, D3, 'math'), [4, 5], '안 하면 기존처럼 4·5강');
+});
+test('[만회 3] 여러 날 밀렸으면 1강씩 차례로, 원래 위치(계획 시작부터 매일 분량)까지', function () {
+  var p = makePlan([subj('math', 30, 2)]);
+  check(p, D1, 'math', 1); L.closeDay(p, D1, D1);              // 1일차 1강만
+  L.closeDay(p, D2, D2);                                        // 2일차 못 함
+  checkAll(p, D3, D3);                                          // 3일차 2·3강
+  eq(L.dayOf(p, D3, D3).gap.math, 3, '원래 6강까지 → 3강 뒤처짐');
+  eq(catchUnits(p, D3, D3, 'math'), [4], '먼저 4강만');
+  check(p, D3, 'math', 4); eq(catchUnits(p, D3, D3, 'math'), [4, 5], '4강 하면 5강');
+  check(p, D3, 'math', 5); eq(catchUnits(p, D3, D3, 'math'), [4, 5, 6], '5강 하면 6강');
+  check(p, D3, 'math', 6); eq(catchUnits(p, D3, D3, 'math'), [4, 5, 6], '원래 위치 도착 → 더 안 나옴');
+  L.closeDay(p, D3, D3);
+  eq(unitsShown(p, D4, D4, 'math'), [7, 8], '4일차 원래 계획대로');
+});
+test('[만회 4] 복습은 실제로 끝낸 날 기준 (만회로 2일차에 끝낸 4강 → 2일차+3일)', function () {
+  var p = makePlan([subj('kor', 30, 2, [], { spaced: [3] })]);
+  check(p, D1, 'kor', 1); L.closeDay(p, D1, D1);
+  checkAll(p, D2, D2); check(p, D2, 'kor', 4); L.closeDay(p, D2, D2);
+  var due = L.simulate(p, D2, D2).revDue;
+  eq([due['R|kor|1|3'], due['R|kor|2|3'], due['R|kor|3|3']], [L.addDays(D2, 3), L.addDays(D2, 3), L.addDays(D2, 3)], '2·3·4강 모두 2일차+3');
+  var q = makePlan([subj('kor', 30, 2, [], { spaced: [3] })]);
+  check(q, D1, 'kor', 1); L.closeDay(q, D1, D1);
+  checkAll(q, D2, D2); L.closeDay(q, D2, D2);                  // 4강은 3일차에
+  checkAll(q, D3, D3); L.closeDay(q, D3, D3);
+  eq(L.simulate(q, D3, D3).revDue['R|kor|3|3'], L.addDays(D3, 3), '4강은 3일차+3');
+});
+test('[만회 5] 하는 요일 기준: 국어(월수목토) 원래 위치는 하는 날 분량만 셈', function () {
+  var p = makePlan([subj('kor', 40, 2, [], { weekdays: wk('월수목토') })], MON, '2026-02-28');
+  check(p, MON, 'kor', 1); L.autoClose(p, WED);                // 월: 1강만, 화: 국어 없음
+  checkAll(p, WED, WED);                                        // 수: 2·3강
+  eq([L.dayOf(p, WED, WED).gap.kor, catchUnits(p, WED, WED, 'kor')], [1, [4]], '원래 수요일까지 4강 → 4강 만회');
+});
+test('[만회 6] 강의만 듣고 복습은 못 한 만회 강 → 다음 날 남은 항목이 맨 앞', function () {
+  var p = makePlan([subj('kor', 30, 2, ['강의 듣기', '복습'])]);
+  check(p, D1, 'kor', 1, 0); check(p, D1, 'kor', 1, 1); L.closeDay(p, D1, D1);
+  checkAll(p, D2, D2);
+  eq(L.dayOf(p, D2, D2).catchup.kor, ['kor|3|0', 'kor|3|1'], '4강 강의·복습 만회');
+  check(p, D2, 'kor', 4, 0); L.closeDay(p, D2, D2);           // 4강 강의만
+  eq(shownOf(p, D3, D3, 'kor'), ['4:1', '5:0', '5:1'], '3일차: 4강 복습 먼저');
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);
