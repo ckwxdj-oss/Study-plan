@@ -712,6 +712,51 @@ test('[Pre 3주] math_pre_3weeks.csv: 21일차, 강마다 「강의 듣기」 �
   eq(L.itemsFor('강의 듣고 1차 복습', '01강-02강').length, 4, '기존 「강의 듣고 1차 복습」은 그대로');
 });
 
+/* ===== ⏭ 이 과목이 끝나면 시작 ===== */
+function prePlan() {
+  return makePlan([subj('pre', 3, 1), subj('math', 30, 1, [], { after: 'pre' }), subj('kor', 40, 2)]);
+}
+test('[순서 1] 본 수학은 Pre가 다 끝난 다음 날부터, 다른 과목은 그대로', function () {
+  var p = prePlan();
+  [D1, D2, D3].forEach(function (d) {
+    eq(L.dayOf(p, d, d).shown.math, [], d + ' 수학 없음');
+    eq(L.dayOf(p, d, d).blocked.math, 'pre', d + ' Pre 기다리는 중');
+    checkAll(p, d, d); L.closeDay(p, d, d);
+  });
+  eq(unitsShown(p, D4, D4, 'math'), [1], 'Pre 3일차까지 끝 → 4일째 수학 1강');
+  eq(unitsShown(p, D4, D4, 'kor'), [7, 8], '국어는 매일 계속');
+});
+test('[순서 2] Pre가 밀리면 수학도 그만큼 늦게 시작', function () {
+  var p = prePlan();
+  checkAll(p, D1, D1); L.closeDay(p, D1, D1);
+  L.closeDay(p, D2, D2);                                          // 하루 못 함
+  checkAll(p, D3, D3); L.closeDay(p, D3, D3);
+  eq(L.dayOf(p, D4, D4).shown.math, [], 'Pre 아직 1개 남음 → 수학 없음');
+  checkAll(p, D4, D4); L.closeDay(p, D4, D4);
+  eq(unitsShown(p, D5, D5, 'math'), [1], '5일째 수학 시작');
+});
+test('[순서 3] 🏃 만회로 Pre를 빨리 끝내면 수학도 빨리 / 수학 만회는 시작 전 날짜를 세지 않음', function () {
+  var p = makePlan([subj('pre', 4, 2), subj('math', 30, 1, [], { after: 'pre' })]);
+  check(p, D1, 'pre', 1); L.closeDay(p, D1, D1);                // 1일째 1개만
+  checkAll(p, D2, D2); check(p, D2, 'pre', 4); L.closeDay(p, D2, D2);  // 2·3 + 만회 4 → Pre 끝
+  eq(unitsShown(p, D3, D3, 'math'), [1], '3일째 수학 시작');
+  checkAll(p, D3, D3);
+  eq(L.dayOf(p, D3, D3).gap.math, 0, '수학 원래 위치는 시작한 날부터 셈 (만회 없음)');
+});
+test('[순서 4] 예상 완료일도 순서 반영', function () {
+  var p = makePlan([subj('pre', 3, 1), subj('math', 5, 1, [], { after: 'pre' })], D1, '2026-12-31');
+  var f = L.forecast(p, D1);
+  eq([f[0].finishDate, f[1].finishDate, f[1].after], ['2026-12-22', '2026-12-27', 'pre'], 'Pre 12/22 끝 → 수학 12/23~27');
+});
+test('[순서 5] 새 계획: 「처음부터」로 id가 바뀌어도 순서 유지, 앞 과목을 빼면 순서 없앰', function () {
+  var p = prePlan();
+  var np = L.newPlanFrom(p, D1, { id: 'n', name: 'x', start: D1, end: '2027-01-31', subjects: [
+    { id: 'pre', keep: true, carry: false }, { id: 'math', keep: true, carry: false }, { id: 'kor', keep: true, carry: true }] });
+  eq(np.subjects[1].after, np.subjects[0].id, '새 Pre id를 가리킴');
+  var np2 = L.newPlanFrom(p, D1, { id: 'n2', name: 'x', start: D1, end: '2027-01-31', subjects: [{ id: 'math', keep: true, carry: true }] });
+  eq(np2.subjects[0].after, undefined, 'Pre를 빼면 바로 시작');
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);
