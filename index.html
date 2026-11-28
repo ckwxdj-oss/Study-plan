@@ -473,18 +473,20 @@ var StudyLogic = (function () {
   function itemsFor(method, range) {
     method = method.trim(); range = range.trim();
     var lec = /^강의\s*듣고\s*(.*)$/.exec(method);
-    if (lec) {
-      var review = lec[1].trim() || '복습';
+    var only = /^강의(\s*(듣기|수강))?$/.test(method);   // "강의 듣기" / "강의 수강": 강마다 체크 1개 (복습 없음)
+    if (lec || only) {
+      var review = lec ? (lec[1].trim() || '복습') : null;
       var m = /^(\d+)\s*강?\s*[-~]\s*(\d+)\s*강?$/.exec(range) || /^(\d+)\s*강?$/.exec(range);
       if (m) {
         var a = +m[1], b = m[2] ? +m[2] : a, w = m[1].length, out = [];
         for (var n = Math.min(a, b); n <= Math.max(a, b); n++) {
           var name = (String(n).length < w ? new Array(w - String(n).length + 1).join('0') : '') + n + '강';
-          out.push(name + ' 강의 듣기', name + ' ' + review);
+          out.push(name + ' 강의 듣기');
+          if (review) out.push(name + ' ' + review);
         }
         return out;
       }
-      return ['강의 듣기 ' + range, review + ' ' + range];
+      return review ? ['강의 듣기 ' + range, review + ' ' + range] : ['강의 듣기 ' + range];
     }
     return [(method + ' ' + range).trim()];
   }
@@ -2024,7 +2026,7 @@ if (typeof module !== 'undefined') module.exports = StudyLogic;
     if (s) draft = JSON.parse(JSON.stringify(s));
     else {
       var base = (imported.fileName || 'CSV').replace(/\.csv$/i, '');
-      draft = { id: uid(), type: 'table', name: base === 'math_curriculum' ? '수학' : base, book: imported.fileName || '', src: imported.src || null,
+      draft = { id: uid(), type: 'table', name: ({ math_curriculum: '수학', math_pre_3weeks: 'Pre 개념때려잡기' })[base] || base, book: imported.fileName || '', src: imported.src || null,
         rows: imported.rows, daily: 1, mode: 'A', _new: true, _errors: imported.errors };
     }
     ui.modal = tableModal; render();

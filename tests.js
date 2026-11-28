@@ -700,6 +700,18 @@ test('[만회 6] 강의만 듣고 복습은 못 한 만회 강 → 다음 날 �
   eq(shownOf(p, D3, D3, 'kor'), ['4:1', '5:0', '5:1'], '3일차: 4강 복습 먼저');
 });
 
+test('[Pre 3주] math_pre_3weeks.csv: 21일차, 강마다 「강의 듣기」 체크, 2차 복습은 1개', function () {
+  var res = L.rowsFromCSV(fs.readFileSync(path.join(__dirname, 'math_pre_3weeks.csv'), 'utf8'));
+  eq([res.rows.length, res.errors], [21, []], '21일차');
+  eq(res.rows[0].title, '수학 · 중학수학특강 · Pre-개념때려잡기');
+  eq(res.rows[0].items, ['01강 강의 듣기', '02강 강의 듣기', '03강 강의 듣기', '04강 강의 듣기'], '1일차 1~4강');
+  eq(res.rows[4].items, ['2차 복습 01강-13강'], '5일차 2차 복습');
+  eq(res.rows[17].items.length, 4, '18일차 19~22강');
+  var total = res.rows.reduce(function (a, r) { return a + r.items.filter(function (x) { return /강의 듣기$/.test(x); }).length; }, 0);
+  eq(total, 13 + 9 + 28, '강의 수: 중학수학 13 + 도형 9 + 수능 28');
+  eq(L.itemsFor('강의 듣고 1차 복습', '01강-02강').length, 4, '기존 「강의 듣고 1차 복습」은 그대로');
+});
+
 test('(추가) 마감 취소하면 다시 체크·재계산 가능', function () {
   var p = makePlan([subj('kor', 40, 2)]);
   L.closeDay(p, D1, D1);
